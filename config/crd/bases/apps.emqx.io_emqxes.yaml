@@ -7045,6 +7045,7 @@ spec:
                           same Template, but individual replicas also have a consistent identity.
                           Defaults to 2.
                         format: int32
+                        minimum: 0
                         type: integer
                       resources:
                         description: |-
@@ -15390,6 +15391,7 @@ spec:
                           same Template, but individual replicas also have a consistent identity.
                           Defaults to 2.
                         format: int32
+                        minimum: 0
                         type: integer
                       resources:
                         description: |-
@@ -15864,26 +15866,37 @@ spec:
                   blue-green update strategy
                 properties:
                   evacuationStrategy:
-                    description: Number of seconds before evacuation connection timeout.
+                    description: Evacuation strategy.
                     properties:
                       connEvictRate:
                         default: 1000
-                        description: Just work in EMQX Enterprise.
+                        description: |-
+                          Client disconnect rate (number per second).
+                          Same as `conn-evict-rate` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 1
                         type: integer
                       sessEvictRate:
                         default: 1000
-                        description: Just work in EMQX Enterprise.
+                        description: |-
+                          Session evacuation rate (number per second).
+                          Same as `sess-evict-rate` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 1
                         type: integer
                       waitHealthCheck:
                         default: 60
+                        description: |-
+                          Duration (in seconds) during which the node waits for the Load Balancer to remove it from the active backend node list.
+                          Same as `wait-health-check` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 0
                         type: integer
                       waitTakeover:
+                        default: 10
+                        description: |-
+                          Amount of time (in seconds) to wait before starting session evacuation.
+                          Same as `wait-takeover` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 0
                         type: integer
@@ -15891,6 +15904,7 @@ spec:
                   initialDelaySeconds:
                     description: Number of seconds before evacuation connection start.
                     format: int32
+                    minimum: 0
                     type: integer
                   type:
                     default: Recreate

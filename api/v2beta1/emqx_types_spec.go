@@ -112,22 +112,30 @@ type UpdateStrategy struct {
 	// +kubebuilder:default=Recreate
 	Type string `json:"type,omitempty"`
 	// Number of seconds before evacuation connection start.
+	// +kubebuilder:validation:Minimum=0
 	InitialDelaySeconds int32 `json:"initialDelaySeconds,omitempty"`
-	// Number of seconds before evacuation connection timeout.
+	// Evacuation strategy.
 	EvacuationStrategy EvacuationStrategy `json:"evacuationStrategy,omitempty"`
 }
 
 type EvacuationStrategy struct {
-	// +kubebuilder:validation:Minimum=0
-	WaitTakeover int32 `json:"waitTakeover,omitempty"`
-	// Just work in EMQX Enterprise.
+	// Client disconnect rate (number per second).
+	// Same as `conn-evict-rate` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:default=1000
 	ConnEvictRate int32 `json:"connEvictRate,omitempty"`
-	// Just work in EMQX Enterprise.
+	// Session evacuation rate (number per second).
+	// Same as `sess-evict-rate` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:default=1000
 	SessEvictRate int32 `json:"sessEvictRate,omitempty"`
+	// Amount of time (in seconds) to wait before starting session evacuation.
+	// Same as `wait-takeover` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=10
+	WaitTakeover int32 `json:"waitTakeover,omitempty"`
+	// Duration (in seconds) during which the node waits for the Load Balancer to remove it from the active backend node list.
+	// Same as `wait-health-check` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:default=60
 	WaitHealthCheck int32 `json:"waitHealthCheck,omitempty"`
@@ -185,6 +193,7 @@ type EMQXReplicantTemplateSpec struct {
 	// same Template, but individual replicas also have a consistent identity.
 	// Defaults to 2.
 	// +kubebuilder:default:=2
+	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
 	// An eviction is allowed if at least "minAvailable" pods selected by
 	// "selector" will still be available after the eviction, i.e. even in the
