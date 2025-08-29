@@ -176,10 +176,6 @@ type EMQXReplicantTemplateSpec struct {
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 	// If specified, the pod's tolerations.
 	// The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator .
-	// TODO: should use `tolerations` instead, this field just for compatible with old version, will delete in future.
-	ToleRations []corev1.Toleration `json:"toleRations,omitempty"`
-	// If specified, the pod's tolerations.
-	// The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator .
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 	// TopologySpreadConstraint specifies how to spread matching pods among the given topology.
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
