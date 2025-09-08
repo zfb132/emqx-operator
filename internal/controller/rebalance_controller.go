@@ -66,18 +66,12 @@ func NewRebalanceReconciler(mgr manager.Manager) *RebalanceReconciler {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Rebalance object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
 func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
 	var finalizer string = "apps.emqx.io/finalizer"
 	var requester innerReq.RequesterInterface
-	var targetEMQX client.Object
 
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Reconcile rebalance")
@@ -130,7 +124,6 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, emperror.New("failed to get create emqx http API")
 	}
-	targetEMQX = emqx
 
 	if !rebalance.DeletionTimestamp.IsZero() {
 		if rebalance.Status.Phase == appsv2beta1.RebalancePhaseProcessing {
@@ -147,7 +140,7 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	rebalanceStatusHandler(targetEMQX, rebalance, requester, startRebalance, getRebalanceStatus)
+	rebalanceStatusHandler(emqx, rebalance, requester, startRebalance, getRebalanceStatus)
 	if err := r.Client.Status().Update(ctx, rebalance); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -178,11 +171,11 @@ func (r *RebalanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // Rebalance Handler
-type GetRebalanceStatusFunc func(emqx client.Object, requester innerReq.RequesterInterface) ([]appsv2beta1.RebalanceState, error)
-type StartRebalanceFunc func(emqx client.Object, requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error
+type GetRebalanceStatusFunc func(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface) ([]appsv2beta1.RebalanceState, error)
+type StartRebalanceFunc func(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error
 type StopRebalanceFunc func(requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error
 
-func rebalanceStatusHandler(emqx client.Object, rebalance *appsv2beta1.Rebalance, requester innerReq.RequesterInterface,
+func rebalanceStatusHandler(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebalance, requester innerReq.RequesterInterface,
 	startFun StartRebalanceFunc, getRebalanceStatusFun GetRebalanceStatusFunc,
 ) {
 	switch rebalance.Status.Phase {
@@ -229,15 +222,12 @@ func rebalanceStatusHandler(emqx client.Object, rebalance *appsv2beta1.Rebalance
 	}
 }
 
-func startRebalance(emqx client.Object, requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error {
-	nodes, err := getEmqxNodes(emqx)
-	if err != nil {
-		return err
-	}
+func startRebalance(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error {
+	nodes := getEmqxNodes(emqx)
 
 	path := fmt.Sprintf("%s/%s/start", ApiRebalanceV5, nodes[0])
 	body := getRequestBytes(rebalance, nodes)
-	resp, respBody, err := requester.Request("POST", requester.GetURL(path), body, nil)
+	resp, _, err := requester.Request("POST", requester.GetURL(path), body, nil)
 	if err != nil {
 		return err
 	}
@@ -246,15 +236,10 @@ func startRebalance(emqx client.Object, requester innerReq.RequesterInterface, r
 		return emperror.Errorf("request api failed: %s", resp.Status)
 	}
 
-	code := gjson.GetBytes(respBody, "code")
-	if code.String() == "400" {
-		message := gjson.GetBytes(respBody, "message")
-		return emperror.New(message.String())
-	}
 	return nil
 }
 
-func getRebalanceStatus(emqx client.Object, requester innerReq.RequesterInterface) ([]appsv2beta1.RebalanceState, error) {
+func getRebalanceStatus(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface) ([]appsv2beta1.RebalanceState, error) {
 	path := fmt.Sprintf("%s/global_status", ApiRebalanceV5)
 	resp, body, err := requester.Request("GET", requester.GetURL(path), nil, nil)
 	if err != nil {
@@ -315,20 +300,16 @@ func getRequestBytes(rebalance *appsv2beta1.Rebalance, nodes []string) []byte {
 }
 
 // helper functions
-func getEmqxNodes(emqx client.Object) ([]string, error) {
+func getEmqxNodes(emqx *appsv2beta1.EMQX) []string {
 	nodes := []string{}
-	if e, ok := emqx.(*appsv2beta1.EMQX); ok {
-		if len(e.Status.ReplicantNodes) == 0 {
-			for _, node := range e.Status.CoreNodes {
-				nodes = append(nodes, node.Node)
-			}
-		} else {
-			for _, node := range e.Status.ReplicantNodes {
-				nodes = append(nodes, node.Node)
-			}
+	if len(emqx.Status.ReplicantNodes) == 0 {
+		for _, node := range emqx.Status.CoreNodes {
+			nodes = append(nodes, node.Node)
 		}
 	} else {
-		return nil, emperror.New("emqx type error")
+		for _, node := range emqx.Status.ReplicantNodes {
+			nodes = append(nodes, node.Node)
+		}
 	}
-	return nodes, nil
+	return nodes
 }
