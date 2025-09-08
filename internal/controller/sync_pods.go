@@ -237,8 +237,8 @@ func (r *syncPodsReconciliation) canScaleDownReplicaSet(ctx context.Context, req
 		}
 	}
 
-	// If the pod runs Enterprise edition and has at least one session, start node evacuation.
-	if scaleDownPodInfo.Edition == appsv2beta1.EnterpriseEdition && scaleDownPodInfo.Session > 0 {
+	// If the pod has at least one session, start node evacuation.
+	if scaleDownPodInfo.Session > 0 {
 		migrateTo := r.migrationTargetNodes()
 		if err := startEvacuationByAPI(req, r.instance, migrateTo, scaleDownNodeName); err != nil {
 			return scaleDownAdmission{}, emperror.Wrap(err, "failed to start node evacuation")
@@ -247,7 +247,7 @@ func (r *syncPodsReconciliation) canScaleDownReplicaSet(ctx context.Context, req
 		return scaleDownAdmission{Reason: "node needs to be evacuated"}, nil
 	}
 
-	// Open Source or Enterprise with no session
+	// With no sessions
 	if !checkWaitTakeoverReady(r.instance, getEventList(ctx, r.Clientset, r.currentRs)) {
 		return scaleDownAdmission{Reason: "node evacuation just finished"}, nil
 	}
@@ -314,8 +314,8 @@ func (r *syncPodsReconciliation) canScaleDownStatefulSet(ctx context.Context, re
 		return scaleDownAdmission{Pod: scaleDownPod, Reason: "node is already stopped"}, nil
 	}
 
-	// Disallow scaling down the node that is Enterprise and has at least one session.
-	if scaleDownNode.Edition == appsv2beta1.EnterpriseEdition && scaleDownNode.Session > 0 {
+	// Disallow scaling down the node that has at least one session.
+	if scaleDownNode.Session > 0 {
 		migrateTo := r.migrationTargetNodes()
 		if err := startEvacuationByAPI(req, r.instance, migrateTo, scaleDownNode.Node); err != nil {
 			return scaleDownAdmission{}, emperror.Wrap(err, "failed to start node evacuation")
@@ -324,7 +324,7 @@ func (r *syncPodsReconciliation) canScaleDownStatefulSet(ctx context.Context, re
 		return scaleDownAdmission{Reason: "node needs to be evacuated"}, nil
 	}
 
-	// Open Source or Enterprise with no session
+	// With no sessions
 	if !checkWaitTakeoverReady(r.instance, getEventList(ctx, r.Clientset, r.currentSts)) {
 		return scaleDownAdmission{Reason: "node evacuation just finished"}, nil
 	}

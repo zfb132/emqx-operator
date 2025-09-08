@@ -45,16 +45,8 @@ spec:
             type: object
           spec:
             properties:
-              instanceKind:
-                default: EMQX
-                description: |-
-                  InstanceKind is used to distinguish between EMQX and EMQXEnterprise.
-                  When it is set to "EMQX", it means that the EMQX CR is v2beta1,
-                  and when it is set to "EmqxEnterprise", it means that the EmqxEnterprise CR is v1beta4.
-                type: string
               instanceName:
-                description: InstanceName represents the name of EMQX CR, just work
-                  for EMQX Enterprise
+                description: InstanceName represents the name of EMQX CR.
                 type: string
               rebalanceStrategy:
                 description: |-
@@ -132,7 +124,6 @@ spec:
                 - connEvictRate
                 type: object
             required:
-            - instanceKind
             - instanceName
             - rebalanceStrategy
             type: object
@@ -202,7 +193,9 @@ spec:
                         type: string
                       type: array
                     node:
-                      description: Node represents the rebalancing scheduling node.
+                      description: |-
+                        Which node this rebalancing state belongs to.
+                        See `v2beta1.EMQXNode.Node`.
                       type: string
                     recipients:
                       description: Recipients represent the target node for rebalancing.
@@ -215,7 +208,7 @@ spec:
                       format: int32
                       type: integer
                     state:
-                      description: State represents the state of emqx cluster rebalancing.
+                      description: State of the rebalancing.
                       type: string
                   type: object
                 type: array

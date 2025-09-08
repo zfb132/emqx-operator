@@ -178,7 +178,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			cmd = exec.Command(
 				"kubectl", "patch", "emqx", "emqx",
 				"--type", "json",
-				"-p", `[{"op": "replace", "path": "/spec/image", "value": "emqx/emqx-enterprise:latest-elixir"}]`,
+				"-p", `[{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:latest-elixir"}]`,
 			)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to patch emqx cluster")
@@ -319,7 +319,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			cmd = exec.Command(
 				"kubectl", "patch", "emqx", "emqx",
 				"--type", "json",
-				"-p", `[{"op": "replace", "path": "/spec/image", "value": "emqx/emqx-enterprise:latest-elixir"}]`,
+				"-p", `[{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:latest-elixir"}]`,
 			)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to patch emqx cluster")
@@ -451,7 +451,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			Expect(kubectl("patch", "emqx", "emqx",
 				"--type", "json",
 				"-p", `[
-					{"op": "replace", "path": "/spec/image", "value": "emqx/emqx-enterprise:latest-elixir"},
+					{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:latest-elixir"},
 					{"op": "replace", "path": "/spec/coreTemplate/spec/replicas", "value": 2}
 				]`,
 			)).To(Succeed(), "Failed to patch EMQX cluster")
@@ -480,7 +480,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			Expect(kubectl("patch", "emqx", "emqx",
 				"--type", "json",
 				"-p", `[
-					{"op": "replace", "path": "/spec/image", "value": "emqx/emqx-enterprise:latest"},
+					{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:latest"},
 					{"op": "replace", "path": "/spec/coreTemplate/spec/replicas", "value": 1},
 					{"op": "replace", "path": "/spec/config/data", "value": ""}
 				]`,

@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	emperror "emperror.dev/errors"
-	semver "github.com/Masterminds/semver/v3"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	innerReq "github.com/emqx/emqx-operator/internal/requester"
 	"github.com/go-logr/logr"
@@ -103,13 +102,7 @@ func (u *updatePodConditions) checkInCluster(instance *appsv2beta1.EMQX, r inner
 	}
 	for _, node := range nodes {
 		if pod.UID == node.PodUID {
-			if node.Edition == appsv2beta1.EnterpriseEdition {
-				v, _ := semver.NewVersion(node.Version)
-				if v.Compare(semver.MustParse("5.0.3")) >= 0 {
-					return u.checkRebalanceStatus(r, pod)
-				}
-			}
-			return corev1.ConditionTrue
+			return u.checkRebalanceStatus(r, pod)
 		}
 	}
 	return corev1.ConditionFalse

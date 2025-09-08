@@ -37,9 +37,7 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 			resp = &http.Response{
 				StatusCode: 200,
 			}
-			respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-				Edition: "Opensource",
-			})
+			respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{})
 			return resp, respBody, nil
 		}
 
@@ -418,7 +416,6 @@ var _ = Describe("check can be scale down", func() {
 				}
 				if method == "GET" {
 					respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-						Edition: appsv2beta1.EnterpriseEdition,
 						Session: 99999,
 					})
 				}
@@ -439,27 +436,7 @@ var _ = Describe("check can be scale down", func() {
 					StatusCode: 200,
 				}
 				respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-					Edition: appsv2beta1.EnterpriseEdition,
 					Session: 0,
-				})
-				return resp, respBody, nil
-			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, fakeReq)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", BeEmpty()),
-				HaveField("Pod", Not(BeNil())),
-			))
-		})
-
-		It("emqx is open source", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-				resp = &http.Response{
-					StatusCode: 200,
-				}
-				respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-					Edition: "Opensource",
 				})
 				return resp, respBody, nil
 			}
@@ -525,6 +502,7 @@ var _ = Describe("check can be scale down", func() {
 			}
 			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
 		})
+
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
 			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
@@ -569,7 +547,6 @@ var _ = Describe("check can be scale down", func() {
 				}
 				if method == "GET" {
 					respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-						Edition: appsv2beta1.EnterpriseEdition,
 						Session: 99999,
 					})
 				}
@@ -590,27 +567,7 @@ var _ = Describe("check can be scale down", func() {
 					StatusCode: 200,
 				}
 				respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-					Edition: appsv2beta1.EnterpriseEdition,
 					Session: 0,
-				})
-				return resp, respBody, nil
-			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, fakeReq)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", BeEmpty()),
-				HaveField("Pod", Not(BeNil())),
-			))
-		})
-
-		It("emqx is open source", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-				resp = &http.Response{
-					StatusCode: 200,
-				}
-				respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-					Edition: "Opensource",
 				})
 				return resp, respBody, nil
 			}

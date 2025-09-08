@@ -139,45 +139,7 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 			Expect(out).To(BeEquivalentTo(metav1.ConditionTrue), "Rebalance condition should be true")
 		})
 
-		It("EMQX is not enterprise", func() {
-			By("creating EMQX CR")
-			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/emqx-ce.yaml")
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to apply emqx.yaml")
-
-			By("creating Rebalance CR")
-			cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/rebalance.yaml")
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to apply rebalance.yaml")
-
-			By("Rebalance will failed, because the EMQX is not enterprise")
-
-			By("checking Rebalance CR phase")
-			cmd = exec.Command("kubectl", "get", "rebalance", "rebalance", "-o", "jsonpath={.status.phase}")
-			out, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get rebalance status")
-			Expect(out).To(BeEquivalentTo(appsv2beta1.RebalancePhaseFailed), "Rebalance should be failed")
-
-			By("checking Rebalance CR state")
-			cmd = exec.Command("kubectl", "get", "rebalance", "rebalance", "-o", "jsonpath={.status.rebalanceStates}")
-			out, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get rebalance states")
-			Expect(out).To(BeEmpty(), "Rebalance states should be empty")
-
-			By("checking Rebalance CR conditions")
-			cmd = exec.Command(
-				"kubectl", "get", "rebalance", "rebalance",
-				"-o", fmt.Sprintf(
-					"jsonpath={.status.conditions[?(@.type==\"%s\")].status}",
-					appsv2beta1.RebalanceConditionFailed,
-				),
-			)
-			out, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get rebalance conditions")
-			Expect(out).To(BeEquivalentTo(metav1.ConditionTrue), "Rebalance condition should be true")
-		})
-
-		It("EMQX is exist, but no connection should be rebalance", func() {
+		It("EMQX exists / nothing to rebalance", func() {
 			By("creating EMQX CR")
 			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/emqx.yaml")
 			_, err := utils.Run(cmd)
@@ -221,7 +183,7 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 			Expect(out).To(BeEquivalentTo(metav1.ConditionTrue), "Rebalance condition should be true")
 		})
 
-		It("EMQX is exist, and connection should be rebalance", func() {
+		It("EMQX exists / connections should be rebalanced", func() {
 			By("creating EMQX CR")
 			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/emqx.yaml")
 			_, err := utils.Run(cmd)

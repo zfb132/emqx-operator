@@ -52,7 +52,7 @@ var _ = Describe("EMQX Controller", func() {
 						Namespace: "default",
 					},
 					Spec: appsv2beta1.EMQXSpec{
-						Image: "emqx/emqx-enterprise:latest",
+						Image: "emqx/emqx:latest",
 					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
