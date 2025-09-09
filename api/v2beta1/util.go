@@ -173,6 +173,13 @@ func FindPodCondition(pod *corev1.Pod, conditionType corev1.PodConditionType) *c
 	return nil
 }
 
+func ChangeCondition(condition *corev1.PodCondition, status corev1.ConditionStatus) {
+	if condition.Status != status {
+		condition.Status = status
+		condition.LastTransitionTime = metav1.Now()
+	}
+}
+
 func MergeServicePorts(ports1, ports2 []corev1.ServicePort) []corev1.ServicePort {
 	ports := append(ports1, ports2...)
 

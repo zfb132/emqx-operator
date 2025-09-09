@@ -20,7 +20,6 @@ import (
 	"sort"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // EMQXStatus defines the observed state of EMQX
@@ -70,9 +69,7 @@ type EMQXNodesStatus struct {
 }
 
 type EMQXNode struct {
-	PodName       string    `json:"podName,omitempty"`
-	PodUID        types.UID `json:"podUID,omitempty"`
-	ControllerUID types.UID `json:"controllerUID,omitempty"`
+	PodName string `json:"podName,omitempty"`
 	// EMQX node name, example: emqx@127.0.0.1
 	Node string `json:"node,omitempty"`
 	// EMQX node status, example: Running
