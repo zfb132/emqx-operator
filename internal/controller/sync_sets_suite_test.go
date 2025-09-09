@@ -149,7 +149,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 	})
 
 	It("should delete rs sts and pvc", func() {
-		Expect(s.reconcile(ctx, logger, instance, nil)).Should(Equal(subResult{}))
+		r := &reconcileRound{ctx: ctx, log: logger}
+		Expect(s.reconcile(r, instance)).Should(Equal(subResult{}))
 
 		Eventually(func() int {
 			list := &appsv1.ReplicaSetList{}

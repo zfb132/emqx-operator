@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"reflect"
 	"sort"
 	"strconv"
@@ -10,45 +9,38 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	ds "github.com/emqx/emqx-operator/internal/controller/ds"
-	req "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type dsUpdateReplicaSets struct {
 	*EMQXReconciler
 }
 
-func (u *dsUpdateReplicaSets) reconcile(
-	ctx context.Context,
-	logger logr.Logger,
-	instance *appsv2beta1.EMQX,
-	r req.RequesterInterface,
-) subResult {
+func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
 	// If there's no EMQX API to query, skip the reconciliation.
-	if r == nil {
+	if r.api == nil {
 		return subResult{}
 	}
 
 	// If EMQX DS is not enabled, skip this reconciliation step.
-	if !u.conf.IsDSEnabled() {
+	if !r.conf.IsDSEnabled() {
 		return subResult{}
 	}
 
 	// Get the most recent stateful set.
-	updateSts, _, _ := getStateFulSetList(ctx, u.Client, instance)
-	if updateSts == nil {
+	if r.state.updateSts == nil {
 		return subResult{}
 	}
 
 	// Wait until all pods are ready.
 	desiredReplicas := instance.Status.CoreNodesStatus.Replicas
-	if updateSts.Status.AvailableReplicas < desiredReplicas {
+	if r.state.updateSts.Status.AvailableReplicas < desiredReplicas {
 		return subResult{}
 	}
 
 	// Fetch the DS cluster info.
 	// If EMQX DS API is not available, skip this reconciliation step.
-	cluster, err := ds.GetCluster(r)
+	cluster, err := ds.GetCluster(r.api)
 	if err != nil && emperror.Is(err, ds.APIErrorUnavailable) {
 		return subResult{}
 	}
@@ -57,7 +49,7 @@ func (u *dsUpdateReplicaSets) reconcile(
 	}
 
 	// Fetch the DS replication status.
-	replication, err := ds.GetReplicationStatus(r)
+	replication, err := ds.GetReplicationStatus(r.api)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
 	}
@@ -68,7 +60,9 @@ func (u *dsUpdateReplicaSets) reconcile(
 	// Compute the target sites.
 	targetSites := []string{}
 	for _, node := range instance.Status.CoreNodes {
-		if node.ControllerUID == updateSts.UID {
+		pod := r.state.corePods[node.PodName]
+		controllerRef := metav1.GetControllerOf(pod)
+		if controllerRef.UID == r.state.updateSts.UID {
 			site := cluster.FindSite(node.Node)
 			if site == nil {
 				return subResult{err: emperror.Wrapf(err, "no site for node %s", node.Node)}
@@ -89,7 +83,7 @@ func (u *dsUpdateReplicaSets) reconcile(
 
 	// Update replica sets for each DB.
 	for _, db := range replication.DBs {
-		err := ds.UpdateReplicaSet(r, db.Name, targetSites)
+		err := ds.UpdateReplicaSet(r.api, db.Name, targetSites)
 		if err != nil {
 			return subResult{err: emperror.Wrapf(err, "failed to update DB %s replica set", db.Name)}
 		}

@@ -4,7 +4,6 @@ import (
 	"time"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
 	. "github.com/emqx/emqx-operator/test/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,7 +16,6 @@ import (
 
 var _ = Describe("Check add core controller", Ordered, Label("core"), func() {
 	var a *addCore
-	var fakeReq *innerReq.FakeRequester = &innerReq.FakeRequester{}
 	var ns *corev1.Namespace
 	var instance *appsv2beta1.EMQX
 
@@ -58,7 +56,7 @@ var _ = Describe("Check add core controller", Ordered, Label("core"), func() {
 	})
 
 	It("should create statefulSet", func() {
-		Eventually(a.reconcile).WithArguments(ctx, logger, instance, fakeReq).
+		Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
 			WithTimeout(timeout).
 			WithPolling(interval).
 			Should(Equal(subResult{}))
@@ -77,7 +75,7 @@ var _ = Describe("Check add core controller", Ordered, Label("core"), func() {
 	It("change image creates new statefulSet", func() {
 		instance.Spec.Image = "emqx/emqx"
 		instance.Spec.UpdateStrategy.InitialDelaySeconds = int32(999999999)
-		Eventually(a.reconcile).WithArguments(ctx, logger, instance, fakeReq).
+		Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
 			WithTimeout(timeout).
 			WithPolling(interval).
 			Should(Equal(subResult{}))

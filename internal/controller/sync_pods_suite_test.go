@@ -221,7 +221,8 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 
 	It("running update emqx node controller", func() {
 		Eventually(func() *appsv2beta1.EMQX {
-			_ = s.reconcile(ctx, logger, instance, fakeReq)
+			r := &reconcileRound{ctx: ctx, log: logger, api: fakeReq}
+			_ = s.reconcile(r, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(And(
 			WithTransform(
@@ -253,7 +254,8 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 		By("mock rs ready, should scale down sts")
 		instance.Status.ReplicantNodesStatus.CurrentRevision = instance.Status.ReplicantNodesStatus.UpdateRevision
 		Eventually(func() *appsv2beta1.EMQX {
-			_ = s.reconcile(ctx, logger, instance, fakeReq)
+			r := &reconcileRound{ctx: ctx, log: logger, api: fakeReq}
+			_ = s.reconcile(r, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(
 			WithTransform(
@@ -366,8 +368,8 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, nil)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}}
+			admission, err := s.canScaleDownStatefulSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -377,8 +379,8 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is available, but initial delay has not passed", func() {
 			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, nil)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}}
+			admission, err := s.canScaleDownStatefulSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -396,8 +398,8 @@ var _ = Describe("check can be scale down", func() {
 				UpdateRevision:  updateRevision,
 				CurrentRevision: currentRevision,
 			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, nil)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}}
+			admission, err := s.canScaleDownStatefulSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -421,8 +423,8 @@ var _ = Describe("check can be scale down", func() {
 				}
 				return resp, respBody, nil
 			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, fakeReq)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}, api: fakeReq}
+			admission, err := s.canScaleDownStatefulSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -440,8 +442,8 @@ var _ = Describe("check can be scale down", func() {
 				})
 				return resp, respBody, nil
 			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, fakeReq)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}, api: fakeReq}
+			admission, err := s.canScaleDownStatefulSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", BeEmpty()),
@@ -505,8 +507,8 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, nil)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}}
+			admission, err := s.canScaleDownReplicaSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -516,8 +518,8 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is available, but is not initial delay seconds", func() {
 			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, nil)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}}
+			admission, err := s.canScaleDownReplicaSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -531,8 +533,8 @@ var _ = Describe("check can be scale down", func() {
 					State: "fake",
 				},
 			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, nil)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}}
+			admission, err := s.canScaleDownReplicaSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -552,8 +554,8 @@ var _ = Describe("check can be scale down", func() {
 				}
 				return resp, respBody, nil
 			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, fakeReq)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}, api: fakeReq}
+			admission, err := s.canScaleDownReplicaSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -571,8 +573,8 @@ var _ = Describe("check can be scale down", func() {
 				})
 				return resp, respBody, nil
 			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, fakeReq)
+			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}, api: fakeReq}
+			admission, err := s.canScaleDownReplicaSet(r, instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", BeEmpty()),

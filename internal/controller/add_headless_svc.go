@@ -1,12 +1,8 @@
 package controller
 
 import (
-	"context"
-
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -17,8 +13,8 @@ type addHeadlessSvc struct {
 	*EMQXReconciler
 }
 
-func (a *addHeadlessSvc) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, _ innerReq.RequesterInterface) subResult {
-	if err := a.CreateOrUpdateList(ctx, a.Scheme, logger, instance, []client.Object{generateHeadlessService(instance)}); err != nil {
+func (a *addHeadlessSvc) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	if err := a.CreateOrUpdateList(r.ctx, a.Scheme, r.log, instance, []client.Object{generateHeadlessService(instance)}); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to create or update services")}
 	}
 	return subResult{}

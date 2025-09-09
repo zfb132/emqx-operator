@@ -1,14 +1,12 @@
 package controller
 
 import (
-	"context"
 	"net/http"
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
+	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -19,8 +17,8 @@ type addSvc struct {
 	*EMQXReconciler
 }
 
-func (a *addSvc) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, r innerReq.RequesterInterface) subResult {
-	if r == nil {
+func (a *addSvc) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	if r.api == nil {
 		return subResult{}
 	}
 
@@ -28,7 +26,7 @@ func (a *addSvc) reconcile(ctx context.Context, logger logr.Logger, instance *ap
 		return subResult{}
 	}
 
-	configStr, err := a.getEMQXConfigsByAPI(r)
+	configStr, err := a.getEMQXConfigsByAPI(r.api)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to get emqx configs by api")}
 	}
@@ -46,16 +44,16 @@ func (a *addSvc) reconcile(ctx context.Context, logger logr.Logger, instance *ap
 		resources = append(resources, listeners)
 	}
 
-	if err := a.CreateOrUpdateList(ctx, a.Scheme, logger, instance, resources); err != nil {
+	if err := a.CreateOrUpdateList(r.ctx, a.Scheme, r.log, instance, resources); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to create or update services")}
 	}
 	return subResult{}
 }
 
-func (a *addSvc) getEMQXConfigsByAPI(r innerReq.RequesterInterface) (string, error) {
-	url := r.GetURL("api/v5/configs")
+func (a *addSvc) getEMQXConfigsByAPI(req req.RequesterInterface) (string, error) {
+	url := req.GetURL("api/v5/configs")
 
-	resp, body, err := r.Request("GET", url, nil, http.Header{
+	resp, body, err := req.Request("GET", url, nil, http.Header{
 		"Accept": []string{"text/plain"},
 	})
 	if err != nil {

@@ -1,13 +1,9 @@
 package controller
 
 import (
-	"context"
-
 	emperror "emperror.dev/errors"
 	semver "github.com/Masterminds/semver/v3"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,7 +16,7 @@ type addPdb struct {
 	*EMQXReconciler
 }
 
-func (a *addPdb) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, _ innerReq.RequesterInterface) subResult {
+func (a *addPdb) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
 	discoveryClient, _ := discovery.NewDiscoveryClientForConfig(kubeConfig.GetConfigOrDie())
 	kubeVersion, _ := discoveryClient.ServerVersion()
 	v, _ := semver.NewVersion(kubeVersion.String())
@@ -40,7 +36,7 @@ func (a *addPdb) reconcile(ctx context.Context, logger logr.Logger, instance *ap
 		}
 	}
 
-	if err := a.CreateOrUpdateList(ctx, a.Scheme, logger, instance, pdbList); err != nil {
+	if err := a.CreateOrUpdateList(r.ctx, a.Scheme, r.log, instance, pdbList); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to create or update PDBs")}
 	}
 	return subResult{}

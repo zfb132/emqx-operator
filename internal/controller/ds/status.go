@@ -71,10 +71,10 @@ func IsDSAvailable(r req.RequesterInterface) (bool, error) {
 	return false, err
 }
 
-func GetReplicationStatus(r req.RequesterInterface) (DSReplicationStatus, error) {
+func GetReplicationStatus(req req.RequesterInterface) (DSReplicationStatus, error) {
 	status := DSReplicationStatus{DBs: []DSDBReplicationStatus{}}
 
-	body, err := apiGet(r, "api/v5/ds/storages")
+	body, err := apiGet(req, "api/v5/ds/storages")
 	if err != nil {
 		return status, err
 	}
@@ -86,7 +86,7 @@ func GetReplicationStatus(r req.RequesterInterface) (DSReplicationStatus, error)
 
 	dbStatus := DSDBReplicationStatus{}
 	for _, db := range dsDatabases {
-		body, err := apiGet(r, "api/v5/ds/storages/"+db)
+		body, err := apiGet(req, "api/v5/ds/storages/"+db)
 		if err != nil {
 			return status, err
 		}
@@ -123,10 +123,10 @@ func (s *DSReplicationStatus) TargetSites() (sites []string) {
 	return sites
 }
 
-func GetCluster(r req.RequesterInterface) (DSCluster, error) {
+func GetCluster(req req.RequesterInterface) (DSCluster, error) {
 	cluster := DSCluster{Sites: []DSSite{}}
 
-	body, err := apiGet(r, "api/v5/ds/sites")
+	body, err := apiGet(req, "api/v5/ds/sites")
 	if err != nil {
 		return cluster, err
 	}
@@ -138,7 +138,7 @@ func GetCluster(r req.RequesterInterface) (DSCluster, error) {
 
 	for _, s := range sites {
 		site := DSSite{ID: s}
-		body, err := apiGet(r, "api/v5/ds/sites/"+s)
+		body, err := apiGet(req, "api/v5/ds/sites/"+s)
 		if err != nil {
 			return cluster, err
 		}
@@ -160,9 +160,9 @@ func (c *DSCluster) FindSite(node string) *DSSite {
 	return nil
 }
 
-func UpdateReplicaSet(r req.RequesterInterface, db string, sites []string) error {
+func UpdateReplicaSet(req req.RequesterInterface, db string, sites []string) error {
 	body, _ := json.Marshal(sites)
-	_, err := apiRequest(r, "PUT", "api/v5/ds/storages/"+db+"/replicas", body)
+	_, err := apiRequest(req, "PUT", "api/v5/ds/storages/"+db+"/replicas", body)
 	return err
 }
 
@@ -182,13 +182,13 @@ func (e apiError) Is(target error) bool {
 	return false
 }
 
-func apiGet(r req.RequesterInterface, path string) ([]byte, error) {
-	return apiRequest(r, "GET", path, nil)
+func apiGet(req req.RequesterInterface, path string) ([]byte, error) {
+	return apiRequest(req, "GET", path, nil)
 }
 
-func apiRequest(r req.RequesterInterface, method string, path string, body []byte) ([]byte, error) {
-	url := r.GetURL(path)
-	resp, body, err := r.Request(method, url, body, nil)
+func apiRequest(req req.RequesterInterface, method string, path string, body []byte) ([]byte, error) {
+	url := req.GetURL(path)
+	resp, body, err := req.Request(method, url, body, nil)
 	if err != nil {
 		return nil, emperror.Wrapf(err, "error accessing DS API %s", url.String())
 	}

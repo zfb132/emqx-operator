@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -10,8 +9,6 @@ import (
 	"github.com/cisco-open/k8s-objectmatcher/patch"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,23 +24,22 @@ type addCore struct {
 	*EMQXReconciler
 }
 
-func (a *addCore) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, _ innerReq.RequesterInterface) subResult {
-	preSts := getNewStatefulSet(instance, a.conf)
-	preStsHash := preSts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
-	updateSts, _, _ := getStateFulSetList(ctx, a.Client, instance)
+func (a *addCore) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	sts := getNewStatefulSet(instance, r.conf)
+	stsHash := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 
 	needCreate := false
-	if updateSts == nil {
-		logger.Info("going to create new statefulSet",
-			"statefulSet", klog.KObj(preSts),
+	if r.state.updateSts == nil {
+		r.log.Info("going to create new statefulSet",
+			"statefulSet", klog.KObj(sts),
 			"reason", "no existing statefulSet",
 		)
 		needCreate = true
 	} else {
-		patchResult, _ := a.Patcher.Calculate(updateSts, preSts, justCheckPodTemplate())
+		patchResult, _ := a.Patcher.Calculate(r.state.updateSts, sts, justCheckPodTemplate())
 		if !patchResult.IsEmpty() {
-			logger.Info("going to create new statefulSet",
-				"statefulSet", klog.KObj(preSts),
+			r.log.Info("going to create new statefulSet",
+				"statefulSet", klog.KObj(sts),
 				"reason", "pod template has changed",
 				"patch", string(patchResult.Patch),
 			)
@@ -53,16 +49,16 @@ func (a *addCore) reconcile(ctx context.Context, logger logr.Logger, instance *a
 
 	if needCreate {
 		// Create new statefulSet
-		_ = ctrl.SetControllerReference(instance, preSts, a.Scheme)
-		if err := a.Handler.Create(ctx, preSts); err != nil {
+		_ = ctrl.SetControllerReference(instance, sts, a.Scheme)
+		if err := a.Handler.Create(r.ctx, sts); err != nil {
 			if k8sErrors.IsAlreadyExists(emperror.Cause(err)) {
 				cond := instance.Status.GetLastTrueCondition()
 				if cond != nil && cond.Type != appsv2beta1.Available && cond.Type != appsv2beta1.Ready {
 					// Sometimes the updated statefulSet will not be ready, because the EMQX node can not be started.
 					// And then we will rollback EMQX CR spec, the EMQX operator controller will create a new statefulSet.
 					// But the new statefulSet will be the same as the previous one, so we didn't need to create it, just change the EMQX status.
-					if preStsHash == instance.Status.CoreNodesStatus.CurrentRevision {
-						_ = a.updateEMQXStatus(ctx, instance, "RevertStatefulSet", "Revert to current statefulSet", preStsHash)
+					if stsHash == instance.Status.CoreNodesStatus.CurrentRevision {
+						_ = a.updateEMQXStatus(r, instance, "RevertStatefulSet", "Revert to current statefulSet", stsHash)
 						return subResult{}
 					}
 				}
@@ -70,21 +66,21 @@ func (a *addCore) reconcile(ctx context.Context, logger logr.Logger, instance *a
 					instance.Status.CoreNodesStatus.CollisionCount = ptr.To(int32(0))
 				}
 				*instance.Status.CoreNodesStatus.CollisionCount++
-				_ = a.Client.Status().Update(ctx, instance)
+				_ = a.Client.Status().Update(r.ctx, instance)
 				return subResult{result: ctrl.Result{Requeue: true}}
 			}
 			return subResult{err: emperror.Wrap(err, "failed to create statefulSet")}
 		}
-		updateResult := a.updateEMQXStatus(ctx, instance, "CreateNewStatefulSet", "Create new statefulSet", preStsHash)
+		updateResult := a.updateEMQXStatus(r, instance, "CreateNewStatefulSet", "Create new statefulSet", stsHash)
 		return subResult{err: updateResult}
 	}
 
-	preSts.ObjectMeta = updateSts.ObjectMeta
-	preSts.Spec.Template.ObjectMeta = updateSts.Spec.Template.ObjectMeta
-	preSts.Spec.Selector = updateSts.Spec.Selector
+	sts.ObjectMeta = r.state.updateSts.ObjectMeta
+	sts.Spec.Template.ObjectMeta = r.state.updateSts.Spec.Template.ObjectMeta
+	sts.Spec.Selector = r.state.updateSts.Spec.Selector
 	patchResult, _ := a.Patcher.Calculate(
-		updateSts,
-		preSts,
+		r.state.updateSts,
+		sts,
 		// Ignore Status fields and VolumeClaimTemplate stuff.
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
@@ -94,28 +90,28 @@ func (a *addCore) reconcile(ctx context.Context, logger logr.Logger, instance *a
 	)
 	if !patchResult.IsEmpty() {
 		// Update statefulSet
-		logger.Info("going to update statefulSet",
-			"statefulSet", klog.KObj(preSts),
+		r.log.Info("going to update statefulSet",
+			"statefulSet", klog.KObj(sts),
 			"reason", "statefulSet has changed",
 			"patch", string(patchResult.Patch),
 		)
 		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			storage := &appsv1.StatefulSet{}
-			_ = a.Client.Get(ctx, client.ObjectKeyFromObject(preSts), storage)
-			preSts.ResourceVersion = storage.ResourceVersion
-			return a.Handler.Update(ctx, preSts)
+			_ = a.Client.Get(r.ctx, client.ObjectKeyFromObject(sts), storage)
+			sts.ResourceVersion = storage.ResourceVersion
+			return a.Handler.Update(r.ctx, sts)
 		}); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update statefulSet")}
 		}
-		updateResult := a.updateEMQXStatus(ctx, instance, "UpdateStatefulSet", "Update exist statefulSet", preStsHash)
+		updateResult := a.updateEMQXStatus(r, instance, "UpdateStatefulSet", "Update exist statefulSet", stsHash)
 		return subResult{err: updateResult}
 	}
 	return subResult{}
 }
 
-func (a *addCore) updateEMQXStatus(ctx context.Context, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
+func (a *addCore) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_ = a.Client.Get(ctx, client.ObjectKeyFromObject(instance), instance)
+		_ = a.Client.Get(r.ctx, client.ObjectKeyFromObject(instance), instance)
 		instance.Status.SetCondition(metav1.Condition{
 			Type:    appsv2beta1.CoreNodesProgressing,
 			Status:  metav1.ConditionTrue,
@@ -126,7 +122,7 @@ func (a *addCore) updateEMQXStatus(ctx context.Context, instance *appsv2beta1.EM
 		instance.Status.RemoveCondition(appsv2beta1.Available)
 		instance.Status.RemoveCondition(appsv2beta1.CoreNodesReady)
 		instance.Status.CoreNodesStatus.UpdateRevision = podTemplateHash
-		return a.Client.Status().Update(ctx, instance)
+		return a.Client.Status().Update(r.ctx, instance)
 	})
 }
 
