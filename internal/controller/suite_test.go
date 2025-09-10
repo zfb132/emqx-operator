@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -136,7 +138,7 @@ var _ = BeforeSuite(func() {
 	}()
 
 	emqxReconciler = NewEMQXReconciler(k8sManager)
-	emqxConf, err = emqxReconciler.LoadEMQXConf(emqx)
+	emqxConf, err = config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
 	Expect(err).ToNot(HaveOccurred())
 	Expect(emqxConf).ToNot(BeNil())
 })
@@ -149,11 +151,21 @@ var _ = AfterSuite(func() {
 	// Expect(err).NotTo(HaveOccurred())
 })
 
-func newReconciliationRound() *reconcileRound {
+func newReconcileRound() *reconcileRound {
+	req := req.NewMockRequester(
+		func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+			return &http.Response{StatusCode: 501}, []byte{}, nil
+		},
+	)
+	return newReconcileRoundWithRequester(req)
+}
+
+func newReconcileRoundWithRequester(api req.RequesterInterface) *reconcileRound {
 	return &reconcileRound{
-		ctx:  ctx,
-		log:  logger,
-		conf: emqxConf,
-		api:  &req.FakeRequester{},
+		ctx:   ctx,
+		log:   logger,
+		conf:  emqxConf,
+		api:   api,
+		state: &reconcileState{},
 	}
 }

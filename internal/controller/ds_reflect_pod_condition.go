@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"strings"
-
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	ds "github.com/emqx/emqx-operator/internal/controller/ds"
@@ -83,13 +81,11 @@ func (u *dsReflectPodCondition) getSuitableRequester(
 ) req.RequesterInterface {
 	// Prefer node that is part of "update" StatefulSet (if any).
 	for _, core := range instance.Status.CoreNodes {
-		if strings.Contains(core.PodName, instance.Status.CoreNodesStatus.UpdateRevision) {
-			pod := r.state.corePods[core.PodName]
-			if pod.DeletionTimestamp == nil {
-				ready := appsv2beta1.FindPodCondition(pod, corev1.PodReady)
-				if ready != nil && ready.Status == corev1.ConditionTrue {
-					return r.api.SwitchHost(pod.Status.PodIP)
-				}
+		pod := r.state.podWithName(core.PodName)
+		if r.state.partOfUpdateSet(pod, instance) {
+			ready := appsv2beta1.FindPodCondition(pod, corev1.PodReady)
+			if ready != nil && ready.Status == corev1.ConditionTrue {
+				return r.api.SwitchHost(pod.Status.PodIP)
 			}
 		}
 	}

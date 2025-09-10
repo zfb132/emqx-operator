@@ -42,56 +42,6 @@ func listPodsManagedBy(ctx context.Context, k8sClient client.Client, instance *a
 	return result
 }
 
-func getStateFulSetList(ctx context.Context, k8sClient client.Client, instance *appsv2beta1.EMQX) (updateSts, currentSts *appsv1.StatefulSet, oldStsList []*appsv1.StatefulSet) {
-	list := &appsv1.StatefulSetList{}
-	_ = k8sClient.List(ctx, list,
-		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(appsv2beta1.DefaultCoreLabels(instance)),
-	)
-	for _, sts := range list.Items {
-		if hash, ok := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]; ok {
-			if hash == instance.Status.CoreNodesStatus.UpdateRevision {
-				updateSts = sts.DeepCopy()
-			}
-			if hash == instance.Status.CoreNodesStatus.CurrentRevision {
-				currentSts = sts.DeepCopy()
-			}
-			if hash != instance.Status.CoreNodesStatus.UpdateRevision && hash != instance.Status.CoreNodesStatus.CurrentRevision {
-				oldStsList = append(oldStsList, sts.DeepCopy())
-			}
-		}
-	}
-
-	sort.Sort(StatefulSetsByCreationTimestamp(oldStsList))
-	return
-}
-
-func getReplicaSetList(ctx context.Context, k8sClient client.Client, instance *appsv2beta1.EMQX) (updateRs, currentRs *appsv1.ReplicaSet, oldRsList []*appsv1.ReplicaSet) {
-	labels := appsv2beta1.DefaultReplicantLabels(instance)
-
-	list := &appsv1.ReplicaSetList{}
-	_ = k8sClient.List(ctx, list,
-		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(labels),
-	)
-
-	for _, rs := range list.Items {
-		if hash, ok := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]; ok {
-			if hash == instance.Status.ReplicantNodesStatus.UpdateRevision {
-				updateRs = rs.DeepCopy()
-			}
-			if hash == instance.Status.ReplicantNodesStatus.CurrentRevision {
-				currentRs = rs.DeepCopy()
-			}
-			if hash != instance.Status.ReplicantNodesStatus.UpdateRevision && hash != instance.Status.ReplicantNodesStatus.CurrentRevision {
-				oldRsList = append(oldRsList, rs.DeepCopy())
-			}
-		}
-	}
-	sort.Sort(ReplicaSetsByCreationTimestamp(oldRsList))
-	return
-}
-
 func getEventList(ctx context.Context, clientSet *kubernetes.Clientset, obj client.Object) []*corev1.Event {
 	// https://github.com/kubernetes-sigs/kubebuilder/issues/547#issuecomment-450772300
 	eventList, _ := clientSet.CoreV1().Events(obj.GetNamespace()).List(ctx, metav1.ListOptions{

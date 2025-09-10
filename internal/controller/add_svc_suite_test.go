@@ -40,7 +40,7 @@ var _ = Describe("Check add headless svc controller", Ordered, Label("headless_s
 	})
 
 	It("generate svc", func() {
-		Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+		Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 			WithTimeout(timeout).
 			WithPolling(interval).
 			Should(Equal(subResult{}))

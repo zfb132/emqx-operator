@@ -29,14 +29,15 @@ func (a *addCore) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 	stsHash := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 
 	needCreate := false
-	if r.state.updateSts == nil {
+	updateCoreSet := r.state.updateCoreSet(instance)
+	if updateCoreSet == nil {
 		r.log.Info("going to create new statefulSet",
 			"statefulSet", klog.KObj(sts),
 			"reason", "no existing statefulSet",
 		)
 		needCreate = true
 	} else {
-		patchResult, _ := a.Patcher.Calculate(r.state.updateSts, sts, justCheckPodTemplate())
+		patchResult, _ := a.Patcher.Calculate(updateCoreSet, sts, justCheckPodTemplate())
 		if !patchResult.IsEmpty() {
 			r.log.Info("going to create new statefulSet",
 				"statefulSet", klog.KObj(sts),
@@ -48,7 +49,6 @@ func (a *addCore) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 	}
 
 	if needCreate {
-		// Create new statefulSet
 		_ = ctrl.SetControllerReference(instance, sts, a.Scheme)
 		if err := a.Handler.Create(r.ctx, sts); err != nil {
 			if k8sErrors.IsAlreadyExists(emperror.Cause(err)) {
@@ -75,11 +75,11 @@ func (a *addCore) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 		return subResult{err: updateResult}
 	}
 
-	sts.ObjectMeta = r.state.updateSts.ObjectMeta
-	sts.Spec.Template.ObjectMeta = r.state.updateSts.Spec.Template.ObjectMeta
-	sts.Spec.Selector = r.state.updateSts.Spec.Selector
+	sts.ObjectMeta = updateCoreSet.ObjectMeta
+	sts.Spec.Template.ObjectMeta = updateCoreSet.Spec.Template.ObjectMeta
+	sts.Spec.Selector = updateCoreSet.Spec.Selector
 	patchResult, _ := a.Patcher.Calculate(
-		r.state.updateSts,
+		updateCoreSet,
 		sts,
 		// Ignore Status fields and VolumeClaimTemplate stuff.
 		patch.IgnoreStatusFields(),

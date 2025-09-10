@@ -67,7 +67,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 		})
 
 		It("should do nothing", func() {
-			Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+			Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))
@@ -88,7 +88,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 		})
 
 		It("should do nothing", func() {
-			Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+			Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))
@@ -105,7 +105,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 
 	Context("replicant template is not nil, and core code is ready", func() {
 		It("should create replicaSet", func() {
-			Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+			Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))
@@ -117,7 +117,9 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 				)
 				return list.Items
 			}).Should(ConsistOf(
-				WithTransform(func(rs appsv1.ReplicaSet) string { return rs.Spec.Template.Spec.Containers[0].Image }, Equal(instance.Spec.Image)),
+				HaveField("Spec.Template.Spec.Containers", ConsistOf(
+					HaveField("Image", Equal(instance.Spec.Image)),
+				)),
 			))
 		})
 	})
@@ -147,7 +149,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 		})
 
 		It("should update replicaSet", func() {
-			Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+			Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))
@@ -159,7 +161,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 				)
 				return list.Items
 			}).Should(ConsistOf(
-				WithTransform(func(rs appsv1.ReplicaSet) int32 { return *rs.Spec.Replicas }, Equal(*instance.Spec.ReplicantTemplate.Spec.Replicas)),
+				HaveField("Spec.Replicas", Equal(*instance.Spec.ReplicantTemplate.Spec.Replicas)),
 			))
 		})
 	})
@@ -180,7 +182,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 		})
 
 		It("should update replicaSet", func() {
-			Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+			Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))
@@ -216,7 +218,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 		})
 
 		It("should create new replicaSet", func() {
-			Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+			Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))

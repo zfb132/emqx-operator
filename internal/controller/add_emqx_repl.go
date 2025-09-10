@@ -34,25 +34,27 @@ func (a *addRepl) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 	rs := getNewReplicaSet(instance, r.conf)
 	rsHash := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 
-	patchCalculateFunc := func(storage, new *appsv1.ReplicaSet) *patch.PatchResult {
-		if storage == nil {
-			return &patch.PatchResult{Patch: []byte("{should create new ReplicaSet}")}
-		}
-		patchResult, _ := a.Patcher.Calculate(
-			storage.DeepCopy(),
-			new.DeepCopy(),
-			justCheckPodTemplate(),
-		)
-		return patchResult
-	}
-
-	if patchResult := patchCalculateFunc(r.state.updateRs, rs); !patchResult.IsEmpty() {
+	needCreate := false
+	updateReplicantSet := r.state.updateReplicantSet(instance)
+	if updateReplicantSet == nil {
 		r.log.Info("going to create new replicaSet",
 			"replicaSet", klog.KObj(rs),
-			"reason", "pod template has changed",
-			"patch", string(patchResult.Patch),
+			"reason", "no existing replicaSet",
 		)
+		needCreate = true
+	} else {
+		patchResult, _ := a.Patcher.Calculate(updateReplicantSet, rs, justCheckPodTemplate())
+		if !patchResult.IsEmpty() {
+			r.log.Info("going to create new replicaSet",
+				"replicaSet", klog.KObj(rs),
+				"reason", "pod template has changed",
+				"patch", string(patchResult.Patch),
+			)
+			needCreate = true
+		}
+	}
 
+	if needCreate {
 		_ = ctrl.SetControllerReference(instance, rs, a.Scheme)
 		if err := a.Handler.Create(r.ctx, rs); err != nil {
 			if k8sErrors.IsAlreadyExists(emperror.Cause(err)) {
@@ -79,11 +81,11 @@ func (a *addRepl) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 		return subResult{}
 	}
 
-	rs.ObjectMeta = r.state.updateRs.ObjectMeta
-	rs.Spec.Template.ObjectMeta = r.state.updateRs.Spec.Template.ObjectMeta
-	rs.Spec.Selector = r.state.updateRs.Spec.Selector
+	rs.ObjectMeta = updateReplicantSet.ObjectMeta
+	rs.Spec.Template.ObjectMeta = updateReplicantSet.Spec.Template.ObjectMeta
+	rs.Spec.Selector = updateReplicantSet.Spec.Selector
 	if patchResult, _ := a.Patcher.Calculate(
-		r.state.updateRs,
+		updateReplicantSet,
 		rs,
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),

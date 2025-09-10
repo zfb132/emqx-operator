@@ -53,8 +53,7 @@ var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
 	It("should create bootstrap secrets", func() {
 		// Wait until the bootstrap secrets are created
 		// Call the reconciler.
-		r := &reconcileRound{ctx: ctx, log: logger}
-		result := a.reconcile(r, instance)
+		result := a.reconcile(newReconcileRound(), instance)
 
 		// Make sure there were no errors.
 		Expect(result.err).NotTo(HaveOccurred())
@@ -86,8 +85,7 @@ var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
 		}
 
 		// Call the reconciler.
-		r := &reconcileRound{ctx: ctx, log: logger}
-		result := a.reconcile(r, instance)
+		result := a.reconcile(newReconcileRound(), instance)
 
 		// Make sure there were no errors.
 		Expect(result.err).NotTo(HaveOccurred())
@@ -146,8 +144,7 @@ var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
 		Expect(k8sClient.Create(ctx, secretSecret)).Should(Succeed())
 
 		// Call the reconciler.
-		r := &reconcileRound{ctx: ctx, log: logger}
-		result := a.reconcile(r, instance)
+		result := a.reconcile(newReconcileRound(), instance)
 
 		// Make sure there were no errors.
 		Expect(result.err).NotTo(HaveOccurred())

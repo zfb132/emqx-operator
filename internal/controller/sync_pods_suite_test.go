@@ -7,7 +7,7 @@ import (
 	"time"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
+	req "github.com/emqx/emqx-operator/internal/requester"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,23 +24,25 @@ const updateRevision string = "update"
 
 var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 	var s *syncPods
-	var fakeReq *innerReq.FakeRequester = &innerReq.FakeRequester{}
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	var updateSts, currentSts *appsv1.StatefulSet
 	var updateRs, currentRs *appsv1.ReplicaSet
 	var currentStsPod, currentRsPod *corev1.Pod
+	var round *reconcileRound
 
-	BeforeEach(func() {
-		fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+	var api req.RequesterInterface = req.NewMockRequester(
+		func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 			resp = &http.Response{
 				StatusCode: 200,
 			}
 			respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{})
 			return resp, respBody, nil
-		}
+		},
+	)
 
+	BeforeEach(func() {
 		s = &syncPods{emqxReconciler}
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -210,6 +212,9 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 			Spec: currentRs.Spec.Template.Spec,
 		}
 		Expect(k8sClient.Create(ctx, currentRsPod)).Should(Succeed())
+
+		round = newReconcileRoundWithRequester(api)
+		round.state = loadReconcileState(ctx, k8sClient, instance)
 	})
 
 	AfterEach(func() {
@@ -221,8 +226,7 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 
 	It("running update emqx node controller", func() {
 		Eventually(func() *appsv2beta1.EMQX {
-			r := &reconcileRound{ctx: ctx, log: logger, api: fakeReq}
-			_ = s.reconcile(r, instance)
+			_ = s.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(And(
 			WithTransform(
@@ -254,8 +258,7 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 		By("mock rs ready, should scale down sts")
 		instance.Status.ReplicantNodesStatus.CurrentRevision = instance.Status.ReplicantNodesStatus.UpdateRevision
 		Eventually(func() *appsv2beta1.EMQX {
-			r := &reconcileRound{ctx: ctx, log: logger, api: fakeReq}
-			_ = s.reconcile(r, instance)
+			_ = s.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(
 			WithTransform(
@@ -271,7 +274,6 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 
 var _ = Describe("check can be scale down", func() {
 	var s *syncPods
-	var fakeReq *innerReq.FakeRequester = &innerReq.FakeRequester{}
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
@@ -368,8 +370,7 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}}
-			admission, err := s.canScaleDownStatefulSet(r, instance)
+			admission, err := s.canScaleDownStatefulSet(newReconcileRound(), instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -379,8 +380,7 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is available, but initial delay has not passed", func() {
 			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}}
-			admission, err := s.canScaleDownStatefulSet(r, instance)
+			admission, err := s.canScaleDownStatefulSet(newReconcileRound(), instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -398,21 +398,20 @@ var _ = Describe("check can be scale down", func() {
 				UpdateRevision:  updateRevision,
 				CurrentRevision: currentRevision,
 			}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}}
-			admission, err := s.canScaleDownStatefulSet(r, instance)
+			admission, err := s.canScaleDownStatefulSet(newReconcileRound(), instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
 				HaveField("Pod", BeNil()),
 			))
-			Eventually(s.reconcile).WithArguments(ctx, logger, instance, fakeReq).
+			Eventually(s.reconcile).WithArguments(newReconcileRound(), instance).
 				WithTimeout(timeout).
 				WithPolling(interval).
 				Should(Equal(subResult{}))
 		})
 
 		It("emqx is enterprise, and node session more than 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+			api := req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 				resp = &http.Response{
 					StatusCode: 200,
 				}
@@ -422,9 +421,8 @@ var _ = Describe("check can be scale down", func() {
 					})
 				}
 				return resp, respBody, nil
-			}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}, api: fakeReq}
-			admission, err := s.canScaleDownStatefulSet(r, instance)
+			})
+			admission, err := s.canScaleDownStatefulSet(newReconcileRoundWithRequester(api), instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -433,7 +431,7 @@ var _ = Describe("check can be scale down", func() {
 		})
 
 		It("emqx is enterprise, and node session is 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+			api := req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 				resp = &http.Response{
 					StatusCode: 200,
 				}
@@ -441,9 +439,8 @@ var _ = Describe("check can be scale down", func() {
 					Session: 0,
 				})
 				return resp, respBody, nil
-			}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentSts: oldSts}, api: fakeReq}
-			admission, err := s.canScaleDownStatefulSet(r, instance)
+			})
+			admission, err := s.canScaleDownStatefulSet(newReconcileRoundWithRequester(api), instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", BeEmpty()),
@@ -454,6 +451,8 @@ var _ = Describe("check can be scale down", func() {
 
 	Context("check can be scale down rs", func() {
 		var oldRs *appsv1.ReplicaSet
+		var round *reconcileRound
+
 		JustBeforeEach(func() {
 			oldRs = &appsv1.ReplicaSet{
 				ObjectMeta: metav1.ObjectMeta{
@@ -503,12 +502,14 @@ var _ = Describe("check can be scale down", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
+
+			round = newReconcileRound()
+			round.state = loadReconcileState(ctx, k8sClient, instance)
 		})
 
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}}
-			admission, err := s.canScaleDownReplicaSet(r, instance)
+			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -518,8 +519,7 @@ var _ = Describe("check can be scale down", func() {
 
 		It("emqx is available, but is not initial delay seconds", func() {
 			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}}
-			admission, err := s.canScaleDownReplicaSet(r, instance)
+			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -533,8 +533,7 @@ var _ = Describe("check can be scale down", func() {
 					State: "fake",
 				},
 			}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}}
-			admission, err := s.canScaleDownReplicaSet(r, instance)
+			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -543,7 +542,7 @@ var _ = Describe("check can be scale down", func() {
 		})
 
 		It("emqx is enterprise, and node session more than 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+			round.api = req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 				resp = &http.Response{
 					StatusCode: 200,
 				}
@@ -553,9 +552,8 @@ var _ = Describe("check can be scale down", func() {
 					})
 				}
 				return resp, respBody, nil
-			}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}, api: fakeReq}
-			admission, err := s.canScaleDownReplicaSet(r, instance)
+			})
+			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -564,7 +562,7 @@ var _ = Describe("check can be scale down", func() {
 		})
 
 		It("emqx is enterprise, and node session is 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+			round.api = req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 				resp = &http.Response{
 					StatusCode: 200,
 				}
@@ -572,9 +570,8 @@ var _ = Describe("check can be scale down", func() {
 					Session: 0,
 				})
 				return resp, respBody, nil
-			}
-			r := &reconcileRound{ctx: ctx, log: logger, state: &reconcileState{currentRs: oldRs}, api: fakeReq}
-			admission, err := s.canScaleDownReplicaSet(r, instance)
+			})
+			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", BeEmpty()),

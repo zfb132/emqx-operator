@@ -9,7 +9,6 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	ds "github.com/emqx/emqx-operator/internal/controller/ds"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type dsUpdateReplicaSets struct {
@@ -28,13 +27,14 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	}
 
 	// Get the most recent stateful set.
-	if r.state.updateSts == nil {
+	updateCoreSet := r.state.updateCoreSet(instance)
+	if updateCoreSet == nil {
 		return subResult{}
 	}
 
 	// Wait until all pods are ready.
 	desiredReplicas := instance.Status.CoreNodesStatus.Replicas
-	if r.state.updateSts.Status.AvailableReplicas < desiredReplicas {
+	if updateCoreSet.Status.AvailableReplicas < desiredReplicas {
 		return subResult{}
 	}
 
@@ -60,9 +60,8 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	// Compute the target sites.
 	targetSites := []string{}
 	for _, node := range instance.Status.CoreNodes {
-		pod := r.state.corePods[node.PodName]
-		controllerRef := metav1.GetControllerOf(pod)
-		if controllerRef.UID == r.state.updateSts.UID {
+		pod := r.state.podWithName(node.PodName)
+		if r.state.partOfUpdateSet(pod, instance) {
 			site := cluster.FindSite(node.Node)
 			if site == nil {
 				return subResult{err: emperror.Wrapf(err, "no site for node %s", node.Node)}

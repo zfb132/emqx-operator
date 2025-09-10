@@ -10,9 +10,9 @@ import (
 	"github.com/emqx/emqx-operator/internal/controller/ds"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	"github.com/tidwall/gjson"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type updateStatus struct {
@@ -27,56 +27,24 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		status.ReplicantNodesStatus.Replicas = *instance.Spec.ReplicantTemplate.Spec.Replicas
 	}
 
-	if status.CoreNodesStatus.UpdateRevision != "" && status.CoreNodesStatus.CurrentRevision == "" {
-		status.CoreNodesStatus.CurrentRevision = status.CoreNodesStatus.UpdateRevision
-	}
-	if status.ReplicantNodesStatus.UpdateRevision != "" && status.ReplicantNodesStatus.CurrentRevision == "" {
-		status.ReplicantNodesStatus.CurrentRevision = status.ReplicantNodesStatus.UpdateRevision
-	}
+	currentCoreSet, updateCoreSet := switchCoreSet(r, instance)
+	currentReplicantSet, updateReplicantSet := switchReplicantSet(r, instance)
 
-	r.state = &reconcileState{}
-
-	updateSts, currentSts, oldStsList := getStateFulSetList(r.ctx, u.Client, instance)
-	if updateSts != nil {
-		if currentSts == nil || (updateSts.UID != currentSts.UID && currentSts.Status.Replicas == 0) {
-			var i int
-			for i = 0; i < len(oldStsList); i++ {
-				if oldStsList[i].Status.Replicas > 0 {
-					currentSts = oldStsList[i]
-					break
-				}
-			}
-			if i == len(oldStsList) {
-				currentSts = updateSts
-			}
-			status.CoreNodesStatus.CurrentRevision = currentSts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
-		}
+	status.CoreNodesStatus.ReadyReplicas = 0
+	if currentCoreSet != nil {
+		status.CoreNodesStatus.CurrentReplicas = currentCoreSet.Status.Replicas
+	}
+	if updateCoreSet != nil {
+		status.CoreNodesStatus.UpdateReplicas = updateCoreSet.Status.Replicas
 	}
 
-	r.state.updateSts = updateSts
-	r.state.currentSts = currentSts
-	r.state.oldStsList = oldStsList
-
-	updateRs, currentRs, oldRsList := getReplicaSetList(r.ctx, u.Client, instance)
-	if updateRs != nil {
-		if currentRs == nil || (updateRs.UID != currentRs.UID && currentRs.Status.Replicas == 0) {
-			var i int
-			for i = 0; i < len(oldRsList); i++ {
-				if oldRsList[i].Status.Replicas > 0 {
-					currentRs = oldRsList[i]
-					break
-				}
-			}
-			if i == len(oldRsList) {
-				currentRs = updateRs
-			}
-			status.ReplicantNodesStatus.CurrentRevision = currentRs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
-		}
+	status.ReplicantNodesStatus.ReadyReplicas = 0
+	if currentReplicantSet != nil {
+		status.ReplicantNodesStatus.CurrentReplicas = currentReplicantSet.Status.Replicas
 	}
-
-	r.state.updateRs = updateRs
-	r.state.currentRs = currentRs
-	r.state.oldRsList = oldRsList
+	if updateReplicantSet != nil {
+		status.ReplicantNodesStatus.UpdateReplicas = updateReplicantSet.Status.Replicas
+	}
 
 	// check emqx node status
 	if r.api != nil {
@@ -85,27 +53,11 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 			u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetNodeStatuses", err.Error())
 		}
 	}
-
-	if currentSts != nil {
-		status.CoreNodesStatus.CurrentReplicas = currentSts.Status.Replicas
-	}
-	if updateSts != nil {
-		status.CoreNodesStatus.UpdateReplicas = updateSts.Status.Replicas
-	}
-	status.CoreNodesStatus.ReadyReplicas = 0
 	for _, node := range status.CoreNodes {
 		if node.NodeStatus == "running" {
 			status.CoreNodesStatus.ReadyReplicas++
 		}
 	}
-
-	if currentRs != nil {
-		status.ReplicantNodesStatus.CurrentReplicas = currentRs.Status.Replicas
-	}
-	if updateRs != nil {
-		status.ReplicantNodesStatus.UpdateReplicas = updateRs.Status.Replicas
-	}
-	status.ReplicantNodesStatus.ReadyReplicas = 0
 	for _, node := range status.ReplicantNodes {
 		if node.NodeStatus == "running" {
 			status.ReplicantNodesStatus.ReadyReplicas++
@@ -176,40 +128,53 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	return subResult{}
 }
 
+func switchCoreSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+) (*appsv1.StatefulSet, *appsv1.StatefulSet) {
+	status := &instance.Status
+	current := r.state.currentCoreSet(instance)
+	update := r.state.updateCoreSet(instance)
+	if (current == nil || current.Status.Replicas == 0) && update != nil {
+		status.CoreNodesStatus.CurrentRevision = status.CoreNodesStatus.UpdateRevision
+		return update, update
+	}
+	return current, update
+}
+
+func switchReplicantSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+) (*appsv1.ReplicaSet, *appsv1.ReplicaSet) {
+	status := &instance.Status
+	current := r.state.currentReplicantSet(instance)
+	update := r.state.updateReplicantSet(instance)
+	if (current == nil || current.Status.Replicas == 0) && update != nil {
+		status.ReplicantNodesStatus.CurrentRevision = status.ReplicantNodesStatus.UpdateRevision
+		return update, update
+	}
+	return current, update
+}
+
 func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQX) error {
 	emqxNodes, err := getEMQXNodesByAPI(r.api)
 	if err != nil {
 		return emperror.Wrap(err, "failed to get node statues by API")
 	}
 
-	list := &corev1.PodList{}
-	_ = u.Client.List(r.ctx, list,
-		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(appsv2beta1.DefaultLabels(instance)),
-	)
-
 	status := &instance.Status
+	status.CoreNodes = []appsv2beta1.EMQXNode{}
+	status.ReplicantNodes = []appsv2beta1.EMQXNode{}
 	for _, node := range emqxNodes {
-		for _, pod := range list.Items {
-			controllerRef := metav1.GetControllerOf(&pod)
-			if controllerRef == nil {
-				continue
-			}
-
-			pod := pod.DeepCopy()
-			r.state.pods = append(r.state.pods, pod)
-
+		for _, pod := range r.state.pods {
 			host := strings.Split(node.Node[strings.Index(node.Node, "@")+1:], ":")[0]
 			if node.Role == "core" && strings.HasPrefix(host, pod.Name) {
 				node.PodName = pod.Name
 				status.CoreNodes = append(status.CoreNodes, node)
-				r.state.corePods[node.Node] = pod
 			}
-
 			if node.Role == "replicant" && host == pod.Status.PodIP {
 				node.PodName = pod.Name
 				status.ReplicantNodes = append(status.ReplicantNodes, node)
-				r.state.replicantPods[node.Node] = pod
 			}
 		}
 	}

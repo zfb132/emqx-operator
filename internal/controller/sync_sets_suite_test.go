@@ -21,6 +21,7 @@ var _ = Describe("Check sync sts and pvc", func() {
 
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
+	var round *reconcileRound
 
 	BeforeEach(func() {
 		s = &syncSets{emqxReconciler}
@@ -44,6 +45,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 				},
 			},
 		}
+
+		round = newReconcileRound()
 
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 		for i := 0; i < 5; i++ {
@@ -89,6 +92,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 			rs.Status.ObservedGeneration = 1
 			Expect(k8sClient.Status().Patch(ctx, rs.DeepCopy(), client.Merge)).Should(Succeed())
 
+			round.state.replicantSets = append(round.state.replicantSets, rs)
+
 			sts := &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
@@ -129,6 +134,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 			sts.Status.ObservedGeneration = 1
 			Expect(k8sClient.Status().Patch(ctx, sts.DeepCopy(), client.Merge)).Should(Succeed())
 
+			round.state.coreSets = append(round.state.coreSets, sts)
+
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      sts.Name,
@@ -149,8 +156,7 @@ var _ = Describe("Check sync sts and pvc", func() {
 	})
 
 	It("should delete rs sts and pvc", func() {
-		r := &reconcileRound{ctx: ctx, log: logger}
-		Expect(s.reconcile(r, instance)).Should(Equal(subResult{}))
+		Expect(s.reconcile(round, instance)).Should(Equal(subResult{}))
 
 		Eventually(func() int {
 			list := &appsv1.ReplicaSetList{}
@@ -159,9 +165,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 				client.MatchingLabels(appsv2beta1.DefaultReplicantLabels(instance)),
 			)
 			count := 0
-			for _, i := range list.Items {
-				item := i.DeepCopy()
-				if item.DeletionTimestamp == nil {
+			for _, rs := range list.Items {
+				if rs.DeletionTimestamp == nil {
 					count++
 				}
 			}
@@ -175,9 +180,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 				client.MatchingLabels(appsv2beta1.DefaultCoreLabels(instance)),
 			)
 			count := 0
-			for _, i := range list.Items {
-				item := i.DeepCopy()
-				if item.DeletionTimestamp == nil {
+			for _, sts := range list.Items {
+				if sts.DeletionTimestamp == nil {
 					count++
 				}
 			}
@@ -191,9 +195,8 @@ var _ = Describe("Check sync sts and pvc", func() {
 				client.MatchingLabels(appsv2beta1.DefaultCoreLabels(instance)),
 			)
 			count := 0
-			for _, i := range list.Items {
-				item := i.DeepCopy()
-				if item.DeletionTimestamp == nil {
+			for _, pvc := range list.Items {
+				if pvc.DeletionTimestamp == nil {
 					count++
 				}
 			}

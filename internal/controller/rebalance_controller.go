@@ -120,7 +120,8 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, emperror.New("failed to parse config")
 	}
 
-	requester, err = apiRequester(ctx, r.Client, emqx, conf)
+	state := loadReconcileState(ctx, r.Client, emqx)
+	requester, err = apiRequester(ctx, r.Client, conf, state, emqx)
 	if err != nil {
 		return ctrl.Result{}, emperror.New("failed to get create emqx http API")
 	}

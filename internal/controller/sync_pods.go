@@ -12,7 +12,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type syncPods struct {
@@ -44,28 +43,36 @@ func (s *syncPods) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subR
 }
 
 func (s *syncPods) reconcileReplicaSets(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	if r.state.updateRs == nil || r.state.currentRs == nil {
+	updateRs := r.state.updateReplicantSet(instance)
+	currentRs := r.state.currentReplicantSet(instance)
+	if updateRs == nil || currentRs == nil {
 		return subResult{}
 	}
-	if r.state.updateRs.UID != r.state.currentRs.UID {
-		return s.migrateReplicaSet(r, instance)
+	if updateRs.UID != currentRs.UID {
+		return s.migrateReplicaSet(r, instance, currentRs)
 	}
 	return subResult{}
 }
 
 func (s *syncPods) reconcileStatefulSets(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	if r.state.updateSts == nil || r.state.currentSts == nil {
+	updateSts := r.state.updateCoreSet(instance)
+	currentSts := r.state.currentCoreSet(instance)
+	if updateSts == nil || currentSts == nil {
 		return subResult{}
 	}
-	if r.state.updateSts.UID != r.state.currentSts.UID {
-		return s.migrateStatefulSet(r, instance)
+	if updateSts.UID != currentSts.UID {
+		return s.migrateStatefulSet(r, instance, currentSts)
 	}
-	return s.scaleStatefulSet(r, instance)
+	return s.scaleStatefulSet(r, instance, currentSts)
 }
 
 // Orchestrates gradual scale down of the old replicaSet, by migrating workloads to the new replicaSet.
-func (s *syncPods) migrateReplicaSet(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	admission, err := s.canScaleDownReplicaSet(r, instance)
+func (s *syncPods) migrateReplicaSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	currentRs *appsv1.ReplicaSet,
+) subResult {
+	admission, err := s.canScaleDownReplicaSet(r, instance, currentRs)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to check if old replicaSet can be scaled down")}
 	}
@@ -81,7 +88,6 @@ func (s *syncPods) migrateReplicaSet(r *reconcileRound, instance *appsv2beta1.EM
 		}
 
 		// https://github.com/emqx/emqx-operator/issues/1105
-		var currentRs *appsv1.ReplicaSet = r.state.currentRs
 		*currentRs.Spec.Replicas = *currentRs.Spec.Replicas - 1
 		if err := s.Client.Update(r.ctx, currentRs); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to scale down old replicaSet")}
@@ -91,13 +97,16 @@ func (s *syncPods) migrateReplicaSet(r *reconcileRound, instance *appsv2beta1.EM
 }
 
 // Orchestrates gradual scale down of the old statefulSet, by migrating workloads to the new statefulSet.
-func (s *syncPods) migrateStatefulSet(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	admission, err := s.canScaleDownStatefulSet(r, instance)
+func (s *syncPods) migrateStatefulSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	currentSts *appsv1.StatefulSet,
+) subResult {
+	admission, err := s.canScaleDownStatefulSet(r, instance, currentSts)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to check if old statefulSet can be scaled down")}
 	}
 	if admission.Pod != nil {
-		var currentSts *appsv1.StatefulSet = r.state.currentSts
 		*currentSts.Spec.Replicas = *currentSts.Spec.Replicas - 1
 		if err := s.Client.Update(r.ctx, currentSts); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to scale down old statefulSet")}
@@ -107,27 +116,30 @@ func (s *syncPods) migrateStatefulSet(r *reconcileRound, instance *appsv2beta1.E
 }
 
 // Scale up or down the existing statefulSet.
-func (s *syncPods) scaleStatefulSet(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	var sts *appsv1.StatefulSet = r.state.currentSts
+func (s *syncPods) scaleStatefulSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	currentSts *appsv1.StatefulSet,
+) subResult {
 	desiredReplicas := *instance.Spec.CoreTemplate.Spec.Replicas
-	currentReplicas := *sts.Spec.Replicas
+	currentReplicas := *currentSts.Spec.Replicas
 
 	if currentReplicas < desiredReplicas {
-		*sts.Spec.Replicas = desiredReplicas
-		if err := s.Client.Update(r.ctx, sts); err != nil {
+		*currentSts.Spec.Replicas = desiredReplicas
+		if err := s.Client.Update(r.ctx, currentSts); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to scale up statefulSet")}
 		}
 		return subResult{}
 	}
 
 	if currentReplicas > desiredReplicas {
-		admission, err := s.canScaleDownStatefulSet(r, instance)
+		admission, err := s.canScaleDownStatefulSet(r, instance, currentSts)
 		if err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to check if statefulSet can be scaled down")}
 		}
 		if admission.Pod != nil {
-			*sts.Spec.Replicas = *sts.Spec.Replicas - 1
-			if err := s.Client.Update(r.ctx, sts); err != nil {
+			*currentSts.Spec.Replicas = *currentSts.Spec.Replicas - 1
+			if err := s.Client.Update(r.ctx, currentSts); err != nil {
 				return subResult{err: emperror.Wrap(err, "failed to scale down statefulSet")}
 			}
 			return subResult{}
@@ -137,9 +149,12 @@ func (s *syncPods) scaleStatefulSet(r *reconcileRound, instance *appsv2beta1.EMQ
 	return subResult{}
 }
 
-func (s *syncPods) canScaleDownReplicaSet(r *reconcileRound, instance *appsv2beta1.EMQX) (scaleDownAdmission, error) {
+func (s *syncPods) canScaleDownReplicaSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	currentRs *appsv1.ReplicaSet,
+) (scaleDownAdmission, error) {
 	var err error
-	var currentRs *appsv1.ReplicaSet = r.state.currentRs
 	var scaleDownPod *corev1.Pod
 	var scaleDownNodeName string
 	var scaleDownPodInfo *appsv2beta1.EMQXNode
@@ -223,7 +238,11 @@ func (s *syncPods) canScaleDownReplicaSet(r *reconcileRound, instance *appsv2bet
 	return scaleDownAdmission{Pod: scaleDownPod}, nil
 }
 
-func (s *syncPods) canScaleDownStatefulSet(r *reconcileRound, instance *appsv2beta1.EMQX) (scaleDownAdmission, error) {
+func (s *syncPods) canScaleDownStatefulSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	currentSts *appsv1.StatefulSet,
+) (scaleDownAdmission, error) {
 	// Disallow scaling down the statefulSet if replcants replicaSet is still updating.
 	status := &instance.Status
 	if appsv2beta1.IsExistReplicant(instance) {
@@ -243,7 +262,6 @@ func (s *syncPods) canScaleDownStatefulSet(r *reconcileRound, instance *appsv2be
 	}
 
 	// Get the pod to be scaled down next.
-	var currentSts *appsv1.StatefulSet = r.state.currentSts
 	scaleDownPod := &corev1.Pod{}
 	err := s.Client.Get(r.ctx, instance.NamespacedName(
 		fmt.Sprintf("%s-%d", currentSts.Name, *currentSts.Spec.Replicas-1),
@@ -304,23 +322,17 @@ func (s *syncPods) canScaleDownStatefulSet(r *reconcileRound, instance *appsv2be
 func (s *syncPods) migrationTargetNodes(r *reconcileRound, instance *appsv2beta1.EMQX) []string {
 	targets := []string{}
 	if appsv2beta1.IsExistReplicant(instance) {
-		if r.state.updateRs != nil {
-			for _, node := range instance.Status.ReplicantNodes {
-				pod := r.state.replicantPods[node.Node]
-				controllerRef := metav1.GetControllerOf(pod)
-				if controllerRef.UID == r.state.updateRs.UID {
-					targets = append(targets, node.Node)
-				}
+		for _, node := range instance.Status.ReplicantNodes {
+			pod := r.state.podWithName(node.PodName)
+			if r.state.partOfUpdateSet(pod, instance) {
+				targets = append(targets, node.Node)
 			}
 		}
 	} else {
-		if r.state.updateSts != nil {
-			for _, node := range instance.Status.CoreNodes {
-				pod := r.state.corePods[node.Node]
-				controllerRef := metav1.GetControllerOf(pod)
-				if controllerRef.UID == r.state.updateSts.UID {
-					targets = append(targets, node.Node)
-				}
+		for _, node := range instance.Status.CoreNodes {
+			pod := r.state.podWithName(node.PodName)
+			if r.state.partOfUpdateSet(pod, instance) {
+				targets = append(targets, node.Node)
 			}
 		}
 	}

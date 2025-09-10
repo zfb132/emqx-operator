@@ -56,7 +56,7 @@ var _ = Describe("Check add core controller", Ordered, Label("core"), func() {
 	})
 
 	It("should create statefulSet", func() {
-		Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+		Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 			WithTimeout(timeout).
 			WithPolling(interval).
 			Should(Equal(subResult{}))
@@ -75,7 +75,7 @@ var _ = Describe("Check add core controller", Ordered, Label("core"), func() {
 	It("change image creates new statefulSet", func() {
 		instance.Spec.Image = "emqx/emqx"
 		instance.Spec.UpdateStrategy.InitialDelaySeconds = int32(999999999)
-		Eventually(a.reconcile).WithArguments(newReconciliationRound(), instance).
+		Eventually(a.reconcile).WithArguments(newReconcileRound(), instance).
 			WithTimeout(timeout).
 			WithPolling(interval).
 			Should(Equal(subResult{}))
