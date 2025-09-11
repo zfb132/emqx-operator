@@ -20,105 +20,27 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	corev1 "k8s.io/api/core/v1"
 )
 
-func TestMergeServicePorts(t *testing.T) {
-	t.Run("duplicate name", func(t *testing.T) {
-		ports1 := []corev1.ServicePort{
-			{
-				Name: "mqtt",
-				Port: 1883,
-			},
-			{
-				Name: "mqtts",
-				Port: 8883,
-			},
+func TestCloneAndMergeMap(t *testing.T) {
+	t.Run("merge maps", func(t *testing.T) {
+		dst := map[string]string{
+			"a": "1",
+			"b": "2",
 		}
-
-		ports2 := []corev1.ServicePort{
-			{
-				Name: "mqtt",
-				Port: 11883,
-			},
-			{
-				Name: "ws",
-				Port: 8083,
-			},
+		src := map[string]string{
+			"b": "3",
+			"c": "4",
 		}
-
-		assert.Equal(t, []corev1.ServicePort{
-			{
-				Name: "mqtt",
-				Port: 1883,
-			},
-			{
-				Name: "mqtts",
-				Port: 8883,
-			},
-			{
-				Name: "ws",
-				Port: 8083,
-			},
-		}, MergeServicePorts(ports1, ports2))
+		last := map[string]string{
+			"b": "42",
+			"d": "5",
+		}
+		assert.Equal(t, map[string]string{
+			"a": "1",
+			"b": "2",
+			"c": "4",
+			"d": "5",
+		}, CloneAndMergeMap(dst, src, last))
 	})
-
-	t.Run("duplicate port", func(t *testing.T) {
-		ports1 := []corev1.ServicePort{
-			{
-				Name: "mqtt",
-				Port: 1883,
-			},
-			{
-				Name: "mqtts",
-				Port: 8883,
-			},
-		}
-		ports2 := []corev1.ServicePort{
-			{
-				Name: "duplicate-mqtt",
-				Port: 1883,
-			},
-			{
-				Name: "ws",
-				Port: 8083,
-			},
-		}
-		assert.Equal(t, []corev1.ServicePort{
-			{
-				Name: "mqtt",
-				Port: 1883,
-			},
-			{
-				Name: "mqtts",
-				Port: 8883,
-			},
-			{
-				Name: "ws",
-				Port: 8083,
-			},
-		}, MergeServicePorts(ports1, ports2))
-	})
-}
-
-func TestMergeMap(t *testing.T) {
-	m1 := map[string]string{
-		"m0": "test-0",
-		"m1": "test-1",
-		"m2": "test-2",
-	}
-
-	m2 := map[string]string{
-		"m0": "test-0",
-		"m1": "test-1",
-		"m3": "test-3",
-	}
-
-	expect := map[string]string{
-		"m0": "test-0",
-		"m1": "test-1",
-		"m2": "test-2",
-		"m3": "test-3",
-	}
-	assert.Equal(t, expect, mergeMap(m1, m2))
 }

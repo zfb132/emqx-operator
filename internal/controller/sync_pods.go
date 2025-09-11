@@ -8,6 +8,7 @@ import (
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	util "github.com/emqx/emqx-operator/internal/controller/util"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -166,7 +167,7 @@ func (s *syncPods) canScaleDownReplicaSet(
 	}
 
 	// Nothing to do if the replicaSet has no pods.
-	currentPods := listPodsManagedBy(r.ctx, s.Client, instance, currentRs.UID)
+	currentPods := r.state.podsManagedBy(currentRs.UID)
 	sort.Sort(PodsByNameOlder(currentPods))
 	if len(currentPods) == 0 {
 		return scaleDownAdmission{Reason: "no more pods"}, nil
@@ -215,7 +216,7 @@ func (s *syncPods) canScaleDownReplicaSet(
 
 	// Disallow scaling down the pod that is still a DS replication site.
 	// While replicants are not supposed to be DS replication sites, check it for safety.
-	dsCondition := appsv2beta1.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
+	dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
 	if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
 		return scaleDownAdmission{Reason: "pod is still a DS replication site"}, nil
 	}
@@ -282,7 +283,7 @@ func (s *syncPods) canScaleDownStatefulSet(
 	// Otherwise, if the user has disabled DS, the data is apparently no longer
 	// needs to be preserved.
 	if r.conf.IsDSEnabled() {
-		dsCondition := appsv2beta1.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
+		dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
 		if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
 			return scaleDownAdmission{Reason: "pod is still a DS replication site"}, nil
 		}

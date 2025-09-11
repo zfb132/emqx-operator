@@ -8,6 +8,7 @@ import (
 	"github.com/cisco-open/k8s-objectmatcher/patch"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	util "github.com/emqx/emqx-operator/internal/controller/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -137,9 +138,9 @@ func getNewReplicaSet(instance *appsv2beta1.EMQX, conf *config.Conf) *appsv1.Rep
 	preRs.Labels = appsv2beta1.CloneAndAddLabel(preRs.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
 	preRs.Spec.Selector = appsv2beta1.CloneSelectorAndAddLabel(preRs.Spec.Selector, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
 	preRs.Spec.Template.Labels = appsv2beta1.CloneAndAddLabel(preRs.Spec.Template.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	preRs.Spec.Template.Spec.Containers[0].Ports = appsv2beta1.MergeContainerPorts(
+	preRs.Spec.Template.Spec.Containers[0].Ports = util.MergeContainerPorts(
 		preRs.Spec.Template.Spec.Containers[0].Ports,
-		appsv2beta1.TransServicePortsToContainerPorts(svcPorts),
+		util.MapServicePortsToContainerPorts(svcPorts),
 	)
 	for _, p := range preRs.Spec.Template.Spec.Containers[0].Ports {
 		if p.Name == "dashboard" {

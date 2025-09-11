@@ -18,29 +18,11 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-func listPodsManagedBy(ctx context.Context, k8sClient client.Client, instance *appsv2beta1.EMQX, uid types.UID) []*corev1.Pod {
-	result := []*corev1.Pod{}
-	podList := &corev1.PodList{}
-	labels := appsv2beta1.DefaultLabels(instance)
-	_ = k8sClient.List(ctx, podList,
-		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(labels),
-	)
-	for _, pod := range podList.Items {
-		controllerRef := metav1.GetControllerOf(&pod)
-		if controllerRef != nil && controllerRef.UID == uid {
-			result = append(result, pod.DeepCopy())
-		}
-	}
-	return result
-}
 
 func getEventList(ctx context.Context, clientSet *kubernetes.Clientset, obj client.Object) []*corev1.Event {
 	// https://github.com/kubernetes-sigs/kubebuilder/issues/547#issuecomment-450772300
@@ -59,21 +41,6 @@ func handlerEventList(list *corev1.EventList) []*corev1.Event {
 	}
 	sort.Sort(EventsByLastTimestamp(eList))
 	return eList
-}
-
-func updatePodCondition(
-	ctx context.Context,
-	k8sClient client.Client,
-	pod *corev1.Pod,
-	condition corev1.PodCondition,
-) error {
-	patchBytes, _ := json.Marshal(corev1.Pod{
-		Status: corev1.PodStatus{
-			Conditions: []corev1.PodCondition{condition},
-		},
-	})
-	patch := client.RawPatch(types.StrategicMergePatchType, patchBytes)
-	return k8sClient.Status().Patch(ctx, pod, patch)
 }
 
 func checkInitialDelaySecondsReady(instance *appsv2beta1.EMQX) bool {

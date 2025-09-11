@@ -4,6 +4,7 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	ds "github.com/emqx/emqx-operator/internal/controller/ds"
+	util "github.com/emqx/emqx-operator/internal/controller/util"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,9 +50,9 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 				condition.Status = corev1.ConditionFalse
 			}
 		}
-		existing := appsv2beta1.FindPodCondition(pod, appsv2beta1.DSReplicationSite)
+		existing := util.FindPodCondition(pod, appsv2beta1.DSReplicationSite)
 		if existing == nil || existing.Status != condition.Status {
-			err := updatePodCondition(r.ctx, u.Client, pod, condition)
+			err := util.UpdatePodCondition(r.ctx, u.Client, pod, condition)
 			if err != nil {
 				return subResult{err: emperror.Wrapf(err, "failed to update pod %s status", pod.Name)}
 			}
@@ -83,7 +84,7 @@ func (u *dsReflectPodCondition) getSuitableRequester(
 	for _, core := range instance.Status.CoreNodes {
 		pod := r.state.podWithName(core.PodName)
 		if r.state.partOfUpdateSet(pod, instance) {
-			ready := appsv2beta1.FindPodCondition(pod, corev1.ContainersReady)
+			ready := util.FindPodCondition(pod, corev1.ContainersReady)
 			if ready != nil && ready.Status == corev1.ConditionTrue {
 				return r.api.SwitchHost(pod.Status.PodIP)
 			}

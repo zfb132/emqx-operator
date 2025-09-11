@@ -6,6 +6,7 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	util "github.com/emqx/emqx-operator/internal/controller/util"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,7 +81,7 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *co
 		return nil
 	}
 
-	svc.Spec.Ports = appsv2beta1.MergeServicePorts(svc.Spec.Ports, ports)
+	svc.Spec.Ports = util.MergeServicePorts(svc.Spec.Ports, ports)
 	svc.Spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
 
 	return &corev1.Service{
@@ -138,10 +139,7 @@ func generateListenerService(instance *appsv2beta1.EMQX, conf *config.Conf) *cor
 		}...)
 	}
 
-	svc.Spec.Ports = appsv2beta1.MergeServicePorts(
-		svc.Spec.Ports,
-		ports,
-	)
+	svc.Spec.Ports = util.MergeServicePorts(svc.Spec.Ports, ports)
 	svc.Spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
 	if appsv2beta1.IsExistReplicant(instance) && instance.Status.ReplicantNodesStatus.ReadyReplicas > 0 {
 		svc.Spec.Selector = appsv2beta1.DefaultReplicantLabels(instance)

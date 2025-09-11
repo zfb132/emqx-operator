@@ -10,6 +10,7 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	util "github.com/emqx/emqx-operator/internal/controller/util"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -58,7 +59,7 @@ func apiRequester(
 	})
 	for _, pod := range corePods {
 		if pod.Status.PodIP != "" {
-			cond := appsv2beta1.FindPodCondition(pod, corev1.ContainersReady)
+			cond := util.FindPodCondition(pod, corev1.ContainersReady)
 			if cond != nil && cond.Status == corev1.ConditionTrue {
 				req := &req.Requester{
 					Schema:   schema,
