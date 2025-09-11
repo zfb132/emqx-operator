@@ -6,7 +6,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type addHeadlessService struct {
@@ -14,7 +13,7 @@ type addHeadlessService struct {
 }
 
 func (a *addHeadlessService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	if err := a.CreateOrUpdateList(r.ctx, a.Scheme, r.log, instance, []client.Object{generateHeadlessService(instance)}); err != nil {
+	if err := a.CreateOrUpdate(r.ctx, a.Scheme, r.log, instance, generateHeadlessService(instance)); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to create or update services")}
 	}
 	return subResult{}
