@@ -8,7 +8,7 @@ import (
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	ds "github.com/emqx/emqx-operator/internal/controller/ds"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 )
 
 type dsUpdateReplicaSets struct {
@@ -40,8 +40,8 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 
 	// Fetch the DS cluster info.
 	// If EMQX DS API is not available, skip this reconciliation step.
-	cluster, err := ds.GetCluster(r.api)
-	if err != nil && emperror.Is(err, ds.APIErrorUnavailable) {
+	cluster, err := api.GetDSCluster(r.api)
+	if err != nil && emperror.Is(err, api.ErrorNotFound) {
 		return subResult{}
 	}
 	if err != nil {
@@ -49,9 +49,9 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	}
 
 	// Fetch the DS replication status.
-	replication, err := ds.GetReplicationStatus(r.api)
+	replication, err := api.GetDSReplicationStatus(r.api)
 	if err != nil {
-		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
+		return subResult{err: emperror.Wrap(err, "failed to fetch DS replication status")}
 	}
 
 	// Compute the current sites.
@@ -82,7 +82,7 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 
 	// Update replica sets for each DB.
 	for _, db := range replication.DBs {
-		err := ds.UpdateReplicaSet(r.api, db.Name, targetSites)
+		err := api.UpdateDSReplicaSet(r.api, db.Name, targetSites)
 		if err != nil {
 			return subResult{err: emperror.Wrapf(err, "failed to update DB %s replica set", db.Name)}
 		}

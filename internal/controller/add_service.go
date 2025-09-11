@@ -1,13 +1,11 @@
 package controller
 
 import (
-	"net/http"
-
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
-	req "github.com/emqx/emqx-operator/internal/requester"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -27,7 +25,7 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		return subResult{}
 	}
 
-	configStr, err := a.getEMQXConfigsByAPI(r.api)
+	configStr, err := api.Configs(r.api)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to get emqx configs by api")}
 	}
@@ -49,21 +47,6 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		return subResult{err: emperror.Wrap(err, "failed to create or update services")}
 	}
 	return subResult{}
-}
-
-func (a *addService) getEMQXConfigsByAPI(req req.RequesterInterface) (string, error) {
-	url := req.GetURL("api/v5/configs")
-
-	resp, body, err := req.Request("GET", url, nil, http.Header{
-		"Accept": []string{"text/plain"},
-	})
-	if err != nil {
-		return "", emperror.Wrapf(err, "failed to get API %s", url.String())
-	}
-	if resp.StatusCode != 200 {
-		return "", emperror.Errorf("failed to get API %s, status : %s, body: %s", url.String(), resp.Status, body)
-	}
-	return string(body), nil
 }
 
 func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {

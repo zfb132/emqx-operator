@@ -3,8 +3,8 @@ package controller
 import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	ds "github.com/emqx/emqx-operator/internal/controller/ds"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,12 +20,12 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 		return subResult{}
 	}
 
-	api := u.getSuitableRequester(r, instance)
+	req := u.getSuitableRequester(r, instance)
 
 	// If EMQX DS API is not available, skip this reconciliation step.
 	// We need this API to be available to ask it about replication status.
-	cluster, err := ds.GetCluster(api)
-	if err != nil && emperror.Is(err, ds.APIErrorUnavailable) {
+	cluster, err := api.GetCluster(req)
+	if err != nil && emperror.Is(err, api.ErrorNotFound) {
 		return subResult{}
 	}
 	if err != nil {

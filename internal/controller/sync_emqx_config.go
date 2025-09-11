@@ -2,13 +2,11 @@ package controller
 
 import (
 	"fmt"
-	"net/http"
-	"strings"
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
-	req "github.com/emqx/emqx-operator/internal/requester"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,7 +78,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 			)
 		}
 
-		if err := putEMQXConfigsByAPI(r.api, instance.Spec.Config.Mode, conf.Print()); err != nil {
+		if err := api.UpdateConfigs(r.api, instance.Spec.Config.Mode, conf.Print()); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update emqx config through API")}
 		}
 
@@ -108,19 +106,4 @@ func generateConfigMap(instance *appsv2beta1.EMQX, data string) *corev1.ConfigMa
 			"emqx.conf": data,
 		},
 	}
-}
-
-func putEMQXConfigsByAPI(r req.RequesterInterface, mode, config string) error {
-	url := r.GetURL("api/v5/configs", "mode="+strings.ToLower(mode), "ignore_readonly=true")
-
-	resp, body, err := r.Request("PUT", url, []byte(config), http.Header{
-		"Content-Type": []string{"text/plain"},
-	})
-	if err != nil {
-		return emperror.Wrapf(err, "failed to put API %s", url.String())
-	}
-	if resp.StatusCode != 200 {
-		return emperror.Errorf("failed to put API %s, status : %s, body: %s", url.String(), resp.Status, body)
-	}
-	return nil
 }

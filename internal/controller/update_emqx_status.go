@@ -1,15 +1,12 @@
 package controller
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	"github.com/emqx/emqx-operator/internal/controller/ds"
-	req "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/tidwall/gjson"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,7 +62,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	}
 
 	if r.api != nil {
-		nodeEvacuationsStatus, err := getNodeEvacuationStatusByAPI(r.api)
+		nodeEvacuationsStatus, err := api.NodeEvacuationStatus(r.api)
 		if err == nil {
 			status.NodeEvacuationsStatus = nodeEvacuationsStatus
 		} else {
@@ -78,10 +75,10 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		DBs: []appsv2beta1.DSDBReplicationStatus{},
 	}
 
-	var dsReplicationStatus ds.DSReplicationStatus
+	var dsReplicationStatus api.DSReplicationStatus
 	if r.api != nil {
 		var err error
-		dsReplicationStatus, err = ds.GetReplicationStatus(r.api)
+		dsReplicationStatus, err = api.GetDSReplicationStatus(r.api)
 		if err != nil {
 			u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetDSReplicationStatus", err.Error())
 		}
@@ -265,7 +262,7 @@ func switchReplicantSet(
 }
 
 func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQX) error {
-	emqxNodes, err := getEMQXNodesByAPI(r.api)
+	emqxNodes, err := api.Nodes(r.api)
 	if err != nil {
 		return emperror.Wrap(err, "failed to get node statues by API")
 	}
@@ -295,40 +292,4 @@ func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQ
 	})
 
 	return nil
-}
-
-func getEMQXNodesByAPI(req req.RequesterInterface) ([]appsv2beta1.EMQXNode, error) {
-	url := req.GetURL("api/v5/nodes")
-
-	resp, body, err := req.Request("GET", url, nil, nil)
-	if err != nil {
-		return nil, emperror.Wrapf(err, "failed to get API %s", url.String())
-	}
-	if resp.StatusCode != 200 {
-		return nil, emperror.Errorf("failed to get API %s, status : %s, body: %s", url.String(), resp.Status, body)
-	}
-
-	nodeStatuses := []appsv2beta1.EMQXNode{}
-	if err := json.Unmarshal(body, &nodeStatuses); err != nil {
-		return nil, emperror.Wrap(err, "failed to unmarshal node statuses")
-	}
-	return nodeStatuses, nil
-}
-
-func getNodeEvacuationStatusByAPI(req req.RequesterInterface) ([]appsv2beta1.NodeEvacuationStatus, error) {
-	url := req.GetURL("api/v5/load_rebalance/global_status")
-	resp, body, err := req.Request("GET", url, nil, nil)
-	if err != nil {
-		return nil, emperror.Wrapf(err, "failed to get API %s", url.String())
-	}
-	if resp.StatusCode != 200 {
-		return nil, emperror.Errorf("failed to get API %s, status : %s, body: %s", url.String(), resp.Status, body)
-	}
-
-	nodeEvacuationStatuses := []appsv2beta1.NodeEvacuationStatus{}
-	data := gjson.GetBytes(body, "evacuations")
-	if err := json.Unmarshal([]byte(data.Raw), &nodeEvacuationStatuses); err != nil {
-		return nil, emperror.Wrap(err, "failed to unmarshal node statuses")
-	}
-	return nodeEvacuationStatuses, nil
 }

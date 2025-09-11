@@ -97,7 +97,7 @@ func (requester *Requester) Request(method string, url url.URL, body []byte, hea
 
 	req, err := http.NewRequest(method, url.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, emperror.Wrap(err, "failed to create request")
+		return nil, nil, err
 	}
 
 	for k, v := range header {
@@ -115,16 +115,16 @@ func (requester *Requester) Request(method string, url url.URL, body []byte, hea
 
 	resp, err = httpClient.Do(req)
 	if err != nil {
-		return nil, nil, emperror.Wrap(err, "failed to request API")
+		return nil, nil, emperror.Wrap(err, "request failed")
 	}
 
-	// defer resp.Body.Close()
 	defer func() {
 		_ = resp.Body.Close()
 	}()
+
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return resp, nil, emperror.Wrap(err, "failed to read response body")
+		return resp, nil, emperror.Wrap(err, "response body unreadable")
 	}
 	return resp, body, nil
 }

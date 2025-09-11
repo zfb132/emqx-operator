@@ -1,15 +1,13 @@
 package controller
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
-	req "github.com/emqx/emqx-operator/internal/requester"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -204,7 +202,7 @@ func (s *syncPods) canScaleDownReplicaSet(
 		// If there is no node evacuation, return the oldest pod.
 		scaleDownPod = currentPods[0]
 		scaleDownNodeName = fmt.Sprintf("emqx@%s", scaleDownPod.Status.PodIP)
-		scaleDownPodInfo, err = getEMQXNodeInfoByAPI(r.api, scaleDownNodeName)
+		scaleDownPodInfo, err = api.NodeInfo(r.api, scaleDownNodeName)
 		if err != nil {
 			return scaleDownAdmission{}, emperror.Wrap(err, "failed to get node info by API")
 		}
@@ -223,8 +221,9 @@ func (s *syncPods) canScaleDownReplicaSet(
 
 	// If the pod has at least one session, start node evacuation.
 	if scaleDownPodInfo.Session > 0 {
+		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := s.migrationTargetNodes(r, instance)
-		if err := startEvacuationByAPI(r.api, instance, migrateTo, scaleDownNodeName); err != nil {
+		if err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNodeName); err != nil {
 			return scaleDownAdmission{}, emperror.Wrap(err, "failed to start node evacuation")
 		}
 		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s is being evacuated", scaleDownNodeName))
@@ -291,7 +290,7 @@ func (s *syncPods) canScaleDownStatefulSet(
 
 	// Get the node info of the pod to be scaled down.
 	scaleDownNodeName := fmt.Sprintf("emqx@%s.%s.%s.svc.cluster.local", scaleDownPod.Name, currentSts.Spec.ServiceName, currentSts.Namespace)
-	scaleDownNode, err := getEMQXNodeInfoByAPI(r.api, scaleDownNodeName)
+	scaleDownNode, err := api.NodeInfo(r.api, scaleDownNodeName)
 	if err != nil {
 		return scaleDownAdmission{}, emperror.Wrap(err, "failed to get node info by API")
 	}
@@ -303,8 +302,9 @@ func (s *syncPods) canScaleDownStatefulSet(
 
 	// Disallow scaling down the node that has at least one session.
 	if scaleDownNode.Session > 0 {
+		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := s.migrationTargetNodes(r, instance)
-		if err := startEvacuationByAPI(r.api, instance, migrateTo, scaleDownNode.Node); err != nil {
+		if err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNode.Node); err != nil {
 			return scaleDownAdmission{}, emperror.Wrap(err, "failed to start node evacuation")
 		}
 		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s is being evacuated", scaleDownNode.Node))
@@ -338,64 +338,4 @@ func (s *syncPods) migrationTargetNodes(r *reconcileRound, instance *appsv2beta1
 		}
 	}
 	return targets
-}
-
-func getEMQXNodeInfoByAPI(r req.RequesterInterface, nodeName string) (*appsv2beta1.EMQXNode, error) {
-	url := r.GetURL(fmt.Sprintf("api/v5/nodes/%s", nodeName))
-
-	resp, body, err := r.Request("GET", url, nil, nil)
-	if err != nil {
-		return nil, emperror.Wrap(err, "failed to get API api/v5/nodes")
-	}
-	if resp.StatusCode == 404 {
-		return &appsv2beta1.EMQXNode{
-			Node:       nodeName,
-			NodeStatus: "stopped",
-		}, nil
-	}
-	if resp.StatusCode != 200 {
-		return nil, emperror.Errorf("failed to get API %s, status : %s, body: %s", url.String(), resp.Status, body)
-	}
-
-	nodeInfo := &appsv2beta1.EMQXNode{}
-	if err := json.Unmarshal(body, &nodeInfo); err != nil {
-		return nil, emperror.Wrap(err, "failed to unmarshal node statuses")
-	}
-	return nodeInfo, nil
-}
-
-func startEvacuationByAPI(r req.RequesterInterface, instance *appsv2beta1.EMQX, migrateTo []string, nodeName string) error {
-	body := map[string]interface{}{
-		"conn_evict_rate": instance.Spec.UpdateStrategy.EvacuationStrategy.ConnEvictRate,
-		"sess_evict_rate": instance.Spec.UpdateStrategy.EvacuationStrategy.SessEvictRate,
-		"migrate_to":      migrateTo,
-	}
-	if instance.Spec.UpdateStrategy.EvacuationStrategy.WaitTakeover > 0 {
-		body["wait_takeover"] = instance.Spec.UpdateStrategy.EvacuationStrategy.WaitTakeover
-	}
-	// Specify `wait_health_check` if different from the default.
-	if instance.Spec.UpdateStrategy.EvacuationStrategy.WaitHealthCheck != 60 {
-		body["wait_health_check"] = fmt.Sprintf("%ds", instance.Spec.UpdateStrategy.EvacuationStrategy.WaitHealthCheck)
-	}
-
-	b, err := json.Marshal(body)
-	if err != nil {
-		return emperror.Wrap(err, "marshal body failed")
-	}
-
-	url := r.GetURL("api/v5/load_rebalance/" + nodeName + "/evacuation/start")
-	resp, respBody, err := r.Request("POST", url, b, nil)
-	if err != nil {
-		return emperror.Wrap(err, "failed to request API api/v5/load_rebalance/"+nodeName+"/evacuation/start")
-	}
-	// TODO:
-	// the api/v5/load_rebalance/global_status have some bugs, so we need to ignore the 400 error
-	// wait for EMQX Dev Team fix it.
-	if resp.StatusCode == 400 && strings.Contains(string(respBody), "already_started") {
-		return nil
-	}
-	if resp.StatusCode != 200 {
-		return emperror.Errorf("failed to request API %s, status : %s, body: %s", url.String(), resp.Status, respBody)
-	}
-	return nil
 }

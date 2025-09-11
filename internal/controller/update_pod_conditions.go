@@ -4,6 +4,7 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -24,7 +25,8 @@ func (u *updatePodConditions) reconcile(r *reconcileRound, instance *appsv2beta1
 		if r.state.partOfUpdateSet(pod, instance) {
 			cond := util.FindPodCondition(pod, corev1.ContainersReady)
 			if cond != nil && cond.Status == corev1.ConditionTrue {
-				status := u.checkRebalanceStatus(r, pod)
+				req := r.api.SwitchHost(pod.Status.PodIP)
+				status := api.AvailabilityCheck(req)
 				util.SwitchPodConditionStatus(onServingCondition, status)
 			}
 		} else {
@@ -45,17 +47,4 @@ func (u *updatePodConditions) reconcile(r *reconcileRound, instance *appsv2beta1
 		}
 	}
 	return subResult{}
-}
-
-func (u *updatePodConditions) checkRebalanceStatus(r *reconcileRound, pod *corev1.Pod) corev1.ConditionStatus {
-	req := r.api.SwitchHost(pod.Status.PodIP)
-	url := req.GetURL("api/v5/load_rebalance/availability_check")
-	resp, _, err := req.Request("GET", url, nil, nil)
-	if err != nil {
-		return corev1.ConditionUnknown
-	}
-	if resp.StatusCode != 200 {
-		return corev1.ConditionFalse
-	}
-	return corev1.ConditionTrue
 }
