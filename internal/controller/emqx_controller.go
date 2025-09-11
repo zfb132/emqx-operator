@@ -41,10 +41,11 @@ import (
 
 // Currently executing round of reconciliation
 type reconcileRound struct {
-	ctx  context.Context
-	log  logr.Logger
+	ctx context.Context
+	log logr.Logger
+	// Populated by `loadConfig` reconciler:
 	conf *config.Conf
-	// Populated by setupAPIRequester reconciler:
+	// Populated by `setupAPIRequester` reconciler:
 	api req.RequesterInterface
 	// Populated by loadState reconciler:
 	state *reconcileState
@@ -107,18 +108,23 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	round := reconcileRound{ctx: ctx, log: logger}
 
 	for _, subReconciler := range []subReconciler{
+		// Load EMQX configuration defined in the spec.config.data:
 		&loadConfig{r},
+		// Load the current state of the resources managed by the controller:
 		&loadState{r},
+		// Setup secrets with bootstrap API keys / node cookie:
 		&addBootstrap{r},
+		// Instantiate API requester for the current round:
 		&setupAPIRequester{r},
+		// Perform reconciliation steps:
 		&updateStatus{r},
 		&updatePodConditions{r},
 		&syncConfig{r},
-		&addHeadlessSvc{r},
-		&addCore{r},
-		&addRepl{r},
+		&addHeadlessService{r},
+		&addCoreSet{r},
+		&addReplicantSet{r},
 		&addPdb{r},
-		&addSvc{r},
+		&addService{r},
 		&dsUpdateReplicaSets{r},
 		&dsReflectPodCondition{r},
 		&syncPods{r},

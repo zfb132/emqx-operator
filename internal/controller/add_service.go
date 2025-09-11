@@ -13,11 +13,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type addSvc struct {
+type addService struct {
 	*EMQXReconciler
 }
 
-func (a *addSvc) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
 	if r.api == nil {
 		return subResult{}
 	}
@@ -50,7 +50,7 @@ func (a *addSvc) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRes
 	return subResult{}
 }
 
-func (a *addSvc) getEMQXConfigsByAPI(req req.RequesterInterface) (string, error) {
+func (a *addService) getEMQXConfigsByAPI(req req.RequesterInterface) (string, error) {
 	url := req.GetURL("api/v5/configs")
 
 	resp, body, err := req.Request("GET", url, nil, http.Header{

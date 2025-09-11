@@ -20,7 +20,7 @@ var _ = Describe("Check add repl controller", Ordered, Label("repl"), func() {
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	BeforeEach(func() {
-		a = &addRepl{emqxReconciler}
+		a = &addReplicantSet{emqxReconciler}
 
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{

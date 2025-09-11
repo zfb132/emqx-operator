@@ -9,13 +9,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Check add headless svc controller", Ordered, Label("headless_svc"), func() {
-	var a *addHeadlessSvc
+var _ = Describe("Reconciler addHeadlessService", Ordered, func() {
+	var a *addHeadlessService
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	BeforeEach(func() {
-		a = &addHeadlessSvc{emqxReconciler}
+		a = &addHeadlessService{emqxReconciler}
 
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{

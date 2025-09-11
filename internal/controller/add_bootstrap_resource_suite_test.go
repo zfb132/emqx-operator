@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
+var _ = Describe("Reconciler addBootstrap", Ordered, func() {
 	var instance *appsv2beta1.EMQX = &appsv2beta1.EMQX{}
 	var ns *corev1.Namespace = &corev1.Namespace{}
 	var a *addBootstrap

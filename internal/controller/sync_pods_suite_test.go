@@ -22,7 +22,7 @@ import (
 const currentRevision string = "current"
 const updateRevision string = "update"
 
-var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
+var _ = Describe("Reconciler syncPods", Ordered, func() {
 	var s *syncPods
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
@@ -272,7 +272,7 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 
 })
 
-var _ = Describe("check can be scale down", func() {
+var _ = Describe("Reconciler syncPods / scale down", func() {
 	var s *syncPods
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}

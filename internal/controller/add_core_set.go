@@ -20,11 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type addCore struct {
+type addCoreSet struct {
 	*EMQXReconciler
 }
 
-func (a *addCore) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
 	sts := getNewStatefulSet(instance, r.conf)
 	stsHash := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 
@@ -109,7 +109,7 @@ func (a *addCore) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 	return subResult{}
 }
 
-func (a *addCore) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
+func (a *addCoreSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_ = a.Client.Get(r.ctx, client.ObjectKeyFromObject(instance), instance)
 		instance.Status.SetCondition(metav1.Condition{

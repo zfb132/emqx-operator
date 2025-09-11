@@ -14,13 +14,13 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Check add core controller", Ordered, Label("core"), func() {
-	var a *addCore
+var _ = Describe("Reconciler addCoreSet", Ordered, func() {
+	var a *addCoreSet
 	var ns *corev1.Namespace
 	var instance *appsv2beta1.EMQX
 
 	BeforeEach(func() {
-		a = &addCore{emqxReconciler}
+		a = &addCoreSet{emqxReconciler}
 
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{

@@ -19,14 +19,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type addRepl struct {
+type addReplicantSet struct {
 	*EMQXReconciler
 }
 
-func (a *addRepl) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	// Cluster w/o replicants, skip this step.
 	if instance.Spec.ReplicantTemplate == nil {
 		return subResult{}
 	}
+
+	// Core nodes are still spinning up, wait for them to be ready.
 	if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
 		return subResult{}
 	}
@@ -109,7 +112,7 @@ func (a *addRepl) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRe
 	return subResult{}
 }
 
-func (a *addRepl) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
+func (a *addReplicantSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_ = a.Client.Get(r.ctx, client.ObjectKeyFromObject(instance), instance)
 		instance.Status.SetCondition(metav1.Condition{

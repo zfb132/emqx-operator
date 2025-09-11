@@ -9,11 +9,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type addHeadlessSvc struct {
+type addHeadlessService struct {
 	*EMQXReconciler
 }
 
-func (a *addHeadlessSvc) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addHeadlessService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
 	if err := a.CreateOrUpdateList(r.ctx, a.Scheme, r.log, instance, []client.Object{generateHeadlessService(instance)}); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to create or update services")}
 	}
