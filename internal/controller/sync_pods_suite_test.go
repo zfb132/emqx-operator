@@ -23,14 +23,15 @@ const currentRevision string = "current"
 const updateRevision string = "update"
 
 var _ = Describe("Reconciler syncPods", Ordered, func() {
-	var s *syncPods
+	var sr *syncReplicantSets
+	var sc *syncCoreSets
+	var round *reconcileRound
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	var updateSts, currentSts *appsv1.StatefulSet
 	var updateRs, currentRs *appsv1.ReplicaSet
 	var currentStsPod, currentRsPod *corev1.Pod
-	var round *reconcileRound
 
 	var api req.RequesterInterface = req.NewMockRequester(
 		func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
@@ -43,7 +44,8 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 	)
 
 	BeforeEach(func() {
-		s = &syncPods{emqxReconciler}
+		sr = &syncReplicantSets{emqxReconciler}
+		sc = &syncCoreSets{emqxReconciler}
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "controller-v2beta1-update-emqx-nodes-test-" + rand.String(5),
@@ -226,7 +228,8 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 
 	It("running update emqx node controller", func() {
 		Eventually(func() *appsv2beta1.EMQX {
-			_ = s.reconcile(round, instance)
+			_ = sr.reconcile(round, instance)
+			_ = sc.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(And(
 			WithTransform(
@@ -258,7 +261,8 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 		By("mock rs ready, should scale down sts")
 		instance.Status.ReplicantNodesStatus.CurrentRevision = instance.Status.ReplicantNodesStatus.UpdateRevision
 		Eventually(func() *appsv2beta1.EMQX {
-			_ = s.reconcile(round, instance)
+			_ = sr.reconcile(round, instance)
+			_ = sc.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(
 			WithTransform(
@@ -273,12 +277,10 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 })
 
 var _ = Describe("Reconciler syncPods / scale down", func() {
-	var s *syncPods
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	BeforeEach(func() {
-		s = &syncPods{emqxReconciler}
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "controller-v2beta1-update-emqx-nodes-test-" + rand.String(5),
@@ -310,10 +312,14 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 	})
 
 	Context("check can be scale down sts", func() {
+		var s *syncCoreSets
+		var round *reconcileRound
 		var oldSts *appsv1.StatefulSet
 		var oldStsPod *corev1.Pod
 
 		JustBeforeEach(func() {
+			s = &syncCoreSets{emqxReconciler}
+			round = newReconcileRound()
 			oldStsLabels := appsv2beta1.CloneAndAddLabel(
 				appsv2beta1.DefaultCoreLabels(instance),
 				appsv2beta1.LabelsPodTemplateHashKey,
@@ -366,11 +372,12 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, oldStsPod)).Should(Succeed())
+			round.state = loadReconcileState(ctx, k8sClient, instance)
 		})
 
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
-			admission, err := s.canScaleDownStatefulSet(newReconcileRound(), instance, oldSts)
+			admission, err := s.chooseScaleDownCore(round, instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -380,7 +387,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 
 		It("emqx is available, but initial delay has not passed", func() {
 			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			admission, err := s.canScaleDownStatefulSet(newReconcileRound(), instance, oldSts)
+			admission, err := s.chooseScaleDownCore(round, instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -398,7 +405,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				UpdateRevision:  updateRevision,
 				CurrentRevision: currentRevision,
 			}
-			admission, err := s.canScaleDownStatefulSet(newReconcileRound(), instance, oldSts)
+			admission, err := s.chooseScaleDownCore(round, instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -410,8 +417,8 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				Should(Equal(subResult{}))
 		})
 
-		It("emqx is enterprise, and node session more than 0", func() {
-			api := req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+		It("node session > 0", func() {
+			round.api = req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 				resp = &http.Response{
 					StatusCode: 200,
 				}
@@ -422,7 +429,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				}
 				return resp, respBody, nil
 			})
-			admission, err := s.canScaleDownStatefulSet(newReconcileRoundWithRequester(api), instance, oldSts)
+			admission, err := s.chooseScaleDownCore(round, instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -430,8 +437,8 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 			))
 		})
 
-		It("emqx is enterprise, and node session is 0", func() {
-			api := req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+		It("node session is 0", func() {
+			round.api = req.NewMockRequester(func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 				resp = &http.Response{
 					StatusCode: 200,
 				}
@@ -440,7 +447,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				})
 				return resp, respBody, nil
 			})
-			admission, err := s.canScaleDownStatefulSet(newReconcileRoundWithRequester(api), instance, oldSts)
+			admission, err := s.chooseScaleDownCore(round, instance, oldSts)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", BeEmpty()),
@@ -450,10 +457,13 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 	})
 
 	Context("check can be scale down rs", func() {
-		var oldRs *appsv1.ReplicaSet
+		var s *syncReplicantSets
 		var round *reconcileRound
+		var oldRs *appsv1.ReplicaSet
 
 		JustBeforeEach(func() {
+			s = &syncReplicantSets{emqxReconciler}
+			round = newReconcileRound()
 			oldRs = &appsv1.ReplicaSet{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: instance.Name + "-",
@@ -502,14 +512,12 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-
-			round = newReconcileRound()
 			round.state = loadReconcileState(ctx, k8sClient, instance)
 		})
 
 		It("emqx is not available", func() {
 			instance.Status.Conditions = []metav1.Condition{}
-			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
+			admission, err := s.chooseScaleDownReplicant(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -519,7 +527,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 
 		It("emqx is available, but is not initial delay seconds", func() {
 			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
+			admission, err := s.chooseScaleDownReplicant(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -529,11 +537,9 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 
 		It("emqx is in node evacuations", func() {
 			instance.Status.NodeEvacuationsStatus = []appsv2beta1.NodeEvacuationStatus{
-				{
-					State: "fake",
-				},
+				{State: "fake"},
 			}
-			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
+			admission, err := s.chooseScaleDownReplicant(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -553,7 +559,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				}
 				return resp, respBody, nil
 			})
-			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
+			admission, err := s.chooseScaleDownReplicant(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", Not(BeEmpty())),
@@ -571,7 +577,7 @@ var _ = Describe("Reconciler syncPods / scale down", func() {
 				})
 				return resp, respBody, nil
 			})
-			admission, err := s.canScaleDownReplicaSet(round, instance, oldRs)
+			admission, err := s.chooseScaleDownReplicant(round, instance, oldRs)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(admission).Should(And(
 				HaveField("Reason", BeEmpty()),

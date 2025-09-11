@@ -127,7 +127,8 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		&addService{r},
 		&dsUpdateReplicaSets{r},
 		&dsReflectPodCondition{r},
-		&syncPods{r},
+		&syncReplicantSets{r},
+		&syncCoreSets{r},
 		&syncSets{r},
 	} {
 		subResult := subReconciler.reconcile(&round, instance)
