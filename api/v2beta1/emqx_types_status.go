@@ -127,6 +127,14 @@ func (s *EMQXStatus) SetCondition(c metav1.Condition) {
 	})
 }
 
+func (s *EMQXStatus) SetTrueCondition(conditionType string) {
+	s.SetCondition(metav1.Condition{
+		Type:   conditionType,
+		Status: metav1.ConditionTrue,
+		Reason: conditionType,
+	})
+}
+
 func (s *EMQXStatus) GetLastTrueCondition() *metav1.Condition {
 	for i := range s.Conditions {
 		c := s.Conditions[i]

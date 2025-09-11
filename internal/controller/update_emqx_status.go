@@ -120,12 +120,120 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	status.DSReplication = dsStatus
 
 	// update status condition
-	newEMQXStatusMachine(u.Client, instance).NextStatus(r.ctx)
+	u.updateStatusCondition(r, instance)
 
 	if err := u.Client.Status().Update(r.ctx, instance); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to update status")}
 	}
 	return subResult{}
+}
+
+func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2beta1.EMQX) {
+	spec := &instance.Spec
+	status := &instance.Status
+
+	hasReplicants := appsv2beta1.IsExistReplicant(instance)
+
+	condition := status.GetLastTrueCondition()
+	if condition == nil {
+		condition = &metav1.Condition{
+			Type:   appsv2beta1.Initialized,
+			Status: metav1.ConditionTrue,
+		}
+	}
+
+	switch condition.Type {
+
+	case appsv2beta1.Initialized:
+		status.RemoveCondition(appsv2beta1.Ready)
+		status.RemoveCondition(appsv2beta1.Available)
+		status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
+		status.RemoveCondition(appsv2beta1.ReplicantNodesProgressing)
+		status.RemoveCondition(appsv2beta1.CoreNodesReady)
+		status.RemoveCondition(appsv2beta1.CoreNodesProgressing)
+		u.statusTransition(r, instance, appsv2beta1.CoreNodesProgressing)
+
+	case appsv2beta1.CoreNodesProgressing:
+		updateSts := r.state.updateCoreSet(instance)
+		if updateSts != nil &&
+			updateSts.Status.ReadyReplicas > 0 &&
+			updateSts.Status.ReadyReplicas == status.CoreNodesStatus.UpdateReplicas {
+			u.statusTransition(r, instance, appsv2beta1.CoreNodesReady)
+		}
+
+	case appsv2beta1.CoreNodesReady:
+		if hasReplicants {
+			u.statusTransition(r, instance, appsv2beta1.ReplicantNodesProgressing)
+		} else {
+			u.statusTransition(r, instance, appsv2beta1.Available)
+		}
+
+	case appsv2beta1.ReplicantNodesProgressing:
+		if hasReplicants {
+			updateRs := r.state.updateReplicantSet(instance)
+			if updateRs != nil &&
+				updateRs.Status.ReadyReplicas > 0 &&
+				updateRs.Status.ReadyReplicas == *spec.ReplicantTemplate.Spec.Replicas {
+				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesReady)
+			}
+		} else {
+			u.statusTransition(r, instance, appsv2beta1.Initialized)
+		}
+
+	case appsv2beta1.ReplicantNodesReady:
+		if hasReplicants {
+			u.statusTransition(r, instance, appsv2beta1.Available)
+		} else {
+			u.statusTransition(r, instance, appsv2beta1.Initialized)
+		}
+
+	case appsv2beta1.Available:
+		if status.CoreNodesStatus.ReadyReplicas != status.CoreNodesStatus.Replicas ||
+			status.CoreNodesStatus.UpdateRevision != status.CoreNodesStatus.CurrentRevision {
+			break
+		}
+
+		if hasReplicants {
+			if status.ReplicantNodesStatus.ReadyReplicas != status.ReplicantNodesStatus.Replicas ||
+				status.ReplicantNodesStatus.UpdateRevision != status.ReplicantNodesStatus.CurrentRevision {
+				break
+			}
+		}
+
+		status.SetCondition(metav1.Condition{
+			Type:    appsv2beta1.Ready,
+			Status:  metav1.ConditionTrue,
+			Reason:  appsv2beta1.Ready,
+			Message: "Cluster is ready",
+		})
+
+	case appsv2beta1.Ready:
+		updateSts := r.state.updateCoreSet(instance)
+		if updateSts != nil &&
+			updateSts.Status.ReadyReplicas != status.CoreNodesStatus.Replicas {
+			u.statusTransition(r, instance, appsv2beta1.Initialized)
+		}
+
+		if hasReplicants {
+			updateRs := r.state.updateReplicantSet(instance)
+			if updateRs != nil &&
+				updateRs.Status.ReadyReplicas != status.ReplicantNodesStatus.Replicas {
+				status.RemoveCondition(appsv2beta1.Ready)
+				status.RemoveCondition(appsv2beta1.Available)
+				status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
+				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesProgressing)
+			}
+		}
+	}
+}
+
+func (u *updateStatus) statusTransition(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	conditionType string,
+) {
+	instance.Status.SetTrueCondition(conditionType)
+	u.updateStatusCondition(r, instance)
 }
 
 func switchCoreSet(
