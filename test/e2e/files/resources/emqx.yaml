@@ -3,7 +3,10 @@ kind: EMQX
 metadata:
   name: emqx
 spec:
-  image: emqx/emqx-enterprise:latest
+  image: emqx/emqx:latest
+  config:
+    data: |
+      license { key = "evaluation" }
   updateStrategy:
     evacuationStrategy:
       waitTakeover: 1

@@ -257,13 +257,6 @@ func (in *EMQXReplicantTemplateSpec) DeepCopyInto(out *EMQXReplicantTemplateSpec
 		*out = new(v1.Affinity)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ToleRations != nil {
-		in, out := &in.ToleRations, &out.ToleRations
-		*out = make([]v1.Toleration, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
 	if in.Tolerations != nil {
 		in, out := &in.Tolerations, &out.Tolerations
 		*out = make([]v1.Toleration, len(*in))

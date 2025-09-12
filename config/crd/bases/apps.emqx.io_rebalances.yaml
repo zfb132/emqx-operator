@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.4
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: rebalances.apps.emqx.io
 spec:
   group: apps.emqx.io
@@ -45,103 +45,85 @@ spec:
             type: object
           spec:
             properties:
-              instanceKind:
-                default: EMQX
-                description: |-
-                  InstanceKind is used to distinguish between EMQX and EMQXEnterprise.
-                  When it is set to "EMQX", it means that the EMQX CR is v2beta1,
-                  and when it is set to "EmqxEnterprise", it means that the EmqxEnterprise CR is v1beta4.
-                type: string
               instanceName:
-                description: InstanceName represents the name of EMQX CR, just work
-                  for EMQX Enterprise
+                description: InstanceName represents the name of EMQX CR.
                 type: string
               rebalanceStrategy:
                 description: |-
                   RebalanceStrategy represents the strategy of EMQX rebalancing
-                  More info: https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing
+                  More info: https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing
                 properties:
                   absConnThreshold:
                     default: 1000
                     description: |-
-                      AbsConnThreshold represents the absolute threshold for checking connection balance.
-                      same to abs-conn-threshold in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      The value must be greater than 0
-                      Defaults to 1000.
+                      Represents the absolute threshold for checking connection balance.
+                      Same as `abs-conn-threshold` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
                     format: int32
+                    minimum: 1
                     type: integer
                   absSessThreshold:
                     default: 1000
                     description: |-
-                      AbsSessThreshold represents the absolute threshold for checking session connection balance.
-                      same to abs-sess-threshold in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      The value must be greater than 0
-                      Default to 1000.
+                      Represents the absolute threshold for checking session connection balance.
+                      Same as `abs-sess-threshold` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing)
                     format: int32
+                    minimum: 1
                     type: integer
                   connEvictRate:
                     description: |-
-                      ConnEvictRate represents the source node client disconnect rate per second.
-                      same to conn-evict-rate in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      The value must be greater than 0
+                      Represents the source node client disconnect rate per second.
+                      Same as `conn-evict-rate` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
                     format: int32
                     minimum: 1
                     type: integer
                   relConnThreshold:
                     default: "1.1"
                     description: |-
-                      RelConnThreshold represents the relative threshold for checkin connection balance.
-                      same to rel-conn-threshold in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      the usage of float highly discouraged, as support for them varies across languages.
-                      So we define the RelConnThreshold field as string type and you not float type
-                      The value must be greater than "1.0"
-                      Defaults to "1.1".
+                      Represents the relative threshold for checkin connection balance.
+                      Same as `rel-conn-threshold` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
+                      Using floats is highly [discouraged](https://github.com/kubernetes-sigs/controller-tools/issues/245), defined as a _string_ instead.
+                      Must be greater than 1.0.
+                    pattern: ^[1-9]{1,8}\.[0-9]{1,8}$
                     type: string
                   relSessThreshold:
                     default: "1.1"
                     description: |-
-                      RelSessThreshold represents the relative threshold for checking session connection balance.
-                      same to rel-sess-threshold in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      the usage of float highly discouraged, as support for them varies across languages.
-                      So we define the RelSessThreshold field as string type and you not float type
-                      The value must be greater than "1.0"
-                      Defaults to "1.1".
+                      Represents the relative threshold for checking session connection balance.
+                      Same as `rel-sess-threshold` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
+                      Using floats is highly [discouraged](https://github.com/kubernetes-sigs/controller-tools/issues/245), defined as a _string_ instead.
+                      Must be greater than 1.0.
+                    pattern: ^[1-9]{1,8}\.[0-9]{1,8}$
                     type: string
                   sessEvictRate:
                     default: 500
                     description: |-
-                      SessEvictRate represents the source node session evacuation rate per second.
-                      same to sess-evict-rate in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      The value must be greater than 0
-                      Defaults to 500.
+                      Represents the source node session evacuation rate per second.
+                      Same as `sess-evict-rate` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
                     format: int32
+                    minimum: 1
                     type: integer
                   waitHealthCheck:
                     default: 60
                     description: |-
-                      WaitHealthCheck represents the time (in seconds) to wait for the LB to
-                      remove the source node from the list of active backend nodes. After the
-                      specified waiting time is exceeded,the rebalancing task will start.
-                      same to wait-health-check in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      The value must be greater than 0
-                      Defaults to 60 seconds.
+                      Represents the time (in seconds) to wait for the LB to remove the source node from the list of active backend nodes.
+                      After the specified waiting time is exceeded, the rebalancing task will start.
+                      Same as `wait-health-check` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
                     format: int32
+                    minimum: 0
                     type: integer
                   waitTakeover:
                     default: 60
                     description: |-
-                      WaitTakeover represents the time in seconds to wait for a client to
+                      Represents the time in seconds to wait for a client to
                       reconnect to take over the session after all connections are disconnected.
-                      same to wait-takeover in [EMQX Rebalancing](https://docs.emqx.com/en/enterprise/v4.4/advanced/rebalancing.html#rebalancing)
-                      The value must be greater than 0
-                      Defaults to 60 seconds.
+                      Same as `wait-takeover` in [EMQX Rebalancing](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#rebalancing).
                     format: int32
+                    minimum: 0
                     type: integer
                 required:
                 - connEvictRate
                 type: object
             required:
-            - instanceKind
             - instanceName
             - rebalanceStrategy
             type: object
@@ -211,7 +193,9 @@ spec:
                         type: string
                       type: array
                     node:
-                      description: Node represents the rebalancing scheduling node.
+                      description: |-
+                        Which node this rebalancing state belongs to.
+                        See `v2beta1.EMQXNode.Node`.
                       type: string
                     recipients:
                       description: Recipients represent the target node for rebalancing.
@@ -224,7 +208,7 @@ spec:
                       format: int32
                       type: integer
                     state:
-                      description: State represents the state of emqx cluster rebalancing.
+                      description: State of the rebalancing.
                       type: string
                   type: object
                 type: array

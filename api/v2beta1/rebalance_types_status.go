@@ -56,14 +56,15 @@ type RebalanceCondition struct {
 
 // Rebalance defines the observed Rebalancing state of EMQX
 type RebalanceState struct {
-	// State represents the state of emqx cluster rebalancing.
+	// Which node this rebalancing state belongs to.
+	// See `v2beta1.EMQXNode.Node`.
+	Node string `json:"node,omitempty"`
+	// State of the rebalancing.
 	State string `json:"state,omitempty"`
 	// SessionEvictionRate represents the node session evacuation rate per second.
 	SessionEvictionRate int32 `json:"session_eviction_rate,omitempty"`
 	// Recipients represent the target node for rebalancing.
 	Recipients []string `json:"recipients,omitempty"`
-	// Node represents the rebalancing scheduling node.
-	Node string `json:"node,omitempty"`
 	// Donors represent the source nodes for rebalancing.
 	Donors []string `json:"donors,omitempty"`
 	// CoordinatorNode represents the node currently undergoing rebalancing.

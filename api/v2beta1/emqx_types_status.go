@@ -83,8 +83,6 @@ type EMQXNode struct {
 	Version string `json:"version,omitempty"`
 	// EMQX cluster node role, enum: "core" "replicant"
 	Role string `json:"role,omitempty"`
-	// EMQX cluster node edition, enum: "Opensource" "Enterprise"
-	Edition string `json:"edition,omitempty"`
 	// In EMQX's API of `/api/v5/nodes`, the `connections` field means the number of MQTT session count,
 	Session int64 `json:"connections,omitempty"`
 	// In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.

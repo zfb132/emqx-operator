@@ -1,0 +1,26 @@
+name: Run Gitlint
+
+on: [pull_request]
+
+jobs:
+  gitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitlint
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -qy update
+          sudo apt-get -qy install gitlint
+
+      - name: Run gitlint
+        shell: bash
+        env:
+          BEFORE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          AFTER_REF: ${{ github.sha }}
+        run: |
+          gitlint --commits ${{ env.BEFORE_REF }}..${{ env.AFTER_REF }} --config .github/workflows/.gitlint

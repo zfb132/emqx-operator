@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.4
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: emqxes.apps.emqx.io
 spec:
   group: apps.emqx.io
@@ -7045,6 +7045,7 @@ spec:
                           same Template, but individual replicas also have a consistent identity.
                           Defaults to 2.
                         format: int32
+                        minimum: 0
                         type: integer
                       resources:
                         description: |-
@@ -7268,47 +7269,6 @@ spec:
                             format: int32
                             type: integer
                         type: object
-                      toleRations:
-                        description: |-
-                          If specified, the pod's tolerations.
-                          The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator .
-                        items:
-                          description: |-
-                            The pod this Toleration is attached to tolerates any taint that matches
-                            the triple <key,value,effect> using the matching operator <operator>.
-                          properties:
-                            effect:
-                              description: |-
-                                Effect indicates the taint effect to match. Empty means match all taint effects.
-                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
-                              type: string
-                            key:
-                              description: |-
-                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
-                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
-                              type: string
-                            operator:
-                              description: |-
-                                Operator represents a key's relationship to the value.
-                                Valid operators are Exists and Equal. Defaults to Equal.
-                                Exists is equivalent to wildcard for value, so that a pod can
-                                tolerate all taints of a particular category.
-                              type: string
-                            tolerationSeconds:
-                              description: |-
-                                TolerationSeconds represents the period of time the toleration (which must be
-                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
-                                it is not set, which means tolerate the taint forever (do not evict). Zero and
-                                negative values will be treated as 0 (evict immediately) by the system.
-                              format: int64
-                              type: integer
-                            value:
-                              description: |-
-                                Value is the taint value the toleration matches to.
-                                If the operator is Exists, the value should be empty, otherwise just a regular string.
-                              type: string
-                          type: object
-                        type: array
                       tolerations:
                         description: |-
                           If specified, the pod's tolerations.
@@ -15431,6 +15391,7 @@ spec:
                           same Template, but individual replicas also have a consistent identity.
                           Defaults to 2.
                         format: int32
+                        minimum: 0
                         type: integer
                       resources:
                         description: |-
@@ -15654,47 +15615,6 @@ spec:
                             format: int32
                             type: integer
                         type: object
-                      toleRations:
-                        description: |-
-                          If specified, the pod's tolerations.
-                          The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator .
-                        items:
-                          description: |-
-                            The pod this Toleration is attached to tolerates any taint that matches
-                            the triple <key,value,effect> using the matching operator <operator>.
-                          properties:
-                            effect:
-                              description: |-
-                                Effect indicates the taint effect to match. Empty means match all taint effects.
-                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
-                              type: string
-                            key:
-                              description: |-
-                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
-                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
-                              type: string
-                            operator:
-                              description: |-
-                                Operator represents a key's relationship to the value.
-                                Valid operators are Exists and Equal. Defaults to Equal.
-                                Exists is equivalent to wildcard for value, so that a pod can
-                                tolerate all taints of a particular category.
-                              type: string
-                            tolerationSeconds:
-                              description: |-
-                                TolerationSeconds represents the period of time the toleration (which must be
-                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
-                                it is not set, which means tolerate the taint forever (do not evict). Zero and
-                                negative values will be treated as 0 (evict immediately) by the system.
-                              format: int64
-                              type: integer
-                            value:
-                              description: |-
-                                Value is the taint value the toleration matches to.
-                                If the operator is Exists, the value should be empty, otherwise just a regular string.
-                              type: string
-                          type: object
-                        type: array
                       tolerations:
                         description: |-
                           If specified, the pod's tolerations.
@@ -15946,26 +15866,37 @@ spec:
                   blue-green update strategy
                 properties:
                   evacuationStrategy:
-                    description: Number of seconds before evacuation connection timeout.
+                    description: Evacuation strategy.
                     properties:
                       connEvictRate:
                         default: 1000
-                        description: Just work in EMQX Enterprise.
+                        description: |-
+                          Client disconnect rate (number per second).
+                          Same as `conn-evict-rate` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 1
                         type: integer
                       sessEvictRate:
                         default: 1000
-                        description: Just work in EMQX Enterprise.
+                        description: |-
+                          Session evacuation rate (number per second).
+                          Same as `sess-evict-rate` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 1
                         type: integer
                       waitHealthCheck:
                         default: 60
+                        description: |-
+                          Duration (in seconds) during which the node waits for the Load Balancer to remove it from the active backend node list.
+                          Same as `wait-health-check` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 0
                         type: integer
                       waitTakeover:
+                        default: 10
+                        description: |-
+                          Amount of time (in seconds) to wait before starting session evacuation.
+                          Same as `wait-takeover` in [EMQX Node Evacuation](https://docs.emqx.com/en/emqx/v5.10/deploy/cluster/rebalancing.html#node-evacuation).
                         format: int32
                         minimum: 0
                         type: integer
@@ -15973,6 +15904,7 @@ spec:
                   initialDelaySeconds:
                     description: Number of seconds before evacuation connection start.
                     format: int32
+                    minimum: 0
                     type: integer
                   type:
                     default: Recreate
@@ -16057,10 +15989,6 @@ spec:
                         UID is a type that holds unique ID values, including UUIDs.  Because we
                         don't ONLY use UUIDs, this is an alias to string.  Being a type captures
                         intent and helps make sure that UIDs and names do not get conflated.
-                      type: string
-                    edition:
-                      description: 'EMQX cluster node edition, enum: "Opensource"
-                        "Enterprise"'
                       type: string
                     live_connections:
                       description: |-
@@ -16205,10 +16133,6 @@ spec:
                         UID is a type that holds unique ID values, including UUIDs.  Because we
                         don't ONLY use UUIDs, this is an alias to string.  Being a type captures
                         intent and helps make sure that UIDs and names do not get conflated.
-                      type: string
-                    edition:
-                      description: 'EMQX cluster node edition, enum: "Opensource"
-                        "Enterprise"'
                       type: string
                     live_connections:
                       description: |-

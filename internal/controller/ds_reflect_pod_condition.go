@@ -55,7 +55,7 @@ func (u *dsReflectPodCondition) reconcile(
 	for _, p := range list.Items {
 		pod := p.DeepCopy()
 		node := u.findNode(instance, pod)
-		if node == nil || node.Edition != "Enterprise" {
+		if node == nil {
 			continue
 		}
 		condition := corev1.PodCondition{
@@ -113,9 +113,9 @@ func (u *dsReflectPodCondition) getSuitableRequester(
 	instance *appsv2beta1.EMQX,
 	r req.RequesterInterface,
 ) req.RequesterInterface {
-	// Prefer Enterprise node which is part of "update" StatefulSet (if any).
+	// Prefer node that is part of "update" StatefulSet (if any).
 	for _, core := range instance.Status.CoreNodes {
-		if core.Edition == "Enterprise" && strings.Contains(core.PodName, instance.Status.CoreNodesStatus.UpdateRevision) {
+		if strings.Contains(core.PodName, instance.Status.CoreNodesStatus.UpdateRevision) {
 			pod, err := u.getPod(ctx, instance, core.PodName)
 			if err == nil && pod.DeletionTimestamp == nil {
 				ready := appsv2beta1.FindPodCondition(pod, corev1.PodReady)
