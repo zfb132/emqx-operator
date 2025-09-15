@@ -2,7 +2,6 @@ package controller
 
 import (
 	"fmt"
-	"sort"
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
@@ -81,7 +80,7 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 
 	// Nothing to do if the replicaSet has no pods.
 	currentPods := r.state.podsManagedBy(current.UID)
-	sort.Sort(PodsByNameOlder(currentPods))
+	sortByName(currentPods)
 	if len(currentPods) == 0 {
 		return scaleDownReplicant{Reason: "no more pods"}, nil
 	}

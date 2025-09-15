@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"sort"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -142,7 +141,7 @@ func loadReconcileState(ctx context.Context, client k8s.Client, instance *appsv2
 		state.coreSets = append(state.coreSets, sts.DeepCopy())
 	}
 
-	sort.Sort(StatefulSetsByCreationTimestamp(state.coreSets))
+	sortByCreationTimestamp(state.coreSets)
 
 	rsList := &appsv1.ReplicaSetList{}
 	_ = client.List(ctx, rsList,
@@ -154,7 +153,7 @@ func loadReconcileState(ctx context.Context, client k8s.Client, instance *appsv2
 		state.replicantSets = append(state.replicantSets, rs.DeepCopy())
 	}
 
-	sort.Sort(ReplicaSetsByCreationTimestamp(state.replicantSets))
+	sortByCreationTimestamp(state.replicantSets)
 
 	podList := &corev1.PodList{}
 	_ = client.List(ctx, podList,

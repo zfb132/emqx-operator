@@ -1,13 +1,14 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"hash"
 	"hash/fnv"
-	"sort"
+	"slices"
 	"time"
 
 	emperror "emperror.dev/errors"
@@ -33,14 +34,14 @@ func getEventList(ctx context.Context, clientSet *kubernetes.Clientset, obj clie
 }
 
 func handlerEventList(list *corev1.EventList) []*corev1.Event {
-	eList := []*corev1.Event{}
+	listDeletes := []*corev1.Event{}
 	for _, e := range list.Items {
 		if e.Reason == "SuccessfulDelete" {
-			eList = append(eList, e.DeepCopy())
+			listDeletes = append(listDeletes, e.DeepCopy())
 		}
 	}
-	sort.Sort(EventsByLastTimestamp(eList))
-	return eList
+	sortByLastTimestamp(listDeletes)
+	return listDeletes
 }
 
 func checkInitialDelaySecondsReady(instance *appsv2beta1.EMQX) bool {
@@ -126,78 +127,50 @@ func filterStatefulSetReplicasField(obj []byte) ([]byte, error) {
 	return obj, nil
 }
 
-// StatefulSetsByCreationTimestamp sorts a list of StatefulSet by creation timestamp, using their names as a tie breaker.
-type StatefulSetsByCreationTimestamp []*appsv1.StatefulSet
-
-func (o StatefulSetsByCreationTimestamp) Len() int      { return len(o) }
-func (o StatefulSetsByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o StatefulSetsByCreationTimestamp) Less(i, j int) bool {
-	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
-		return o[i].Name < o[j].Name
+func compareCreationTimestamp(a, b client.Object) int {
+	atime := a.GetCreationTimestamp()
+	btime := b.GetCreationTimestamp()
+	cmpTime := atime.Time.Compare(btime.Time)
+	// Use name as a tie breaker:
+	if cmpTime == 0 {
+		return cmp.Compare(a.GetName(), b.GetName())
 	}
-	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+	return cmpTime
 }
 
-// ReplicaSetsByCreationTimestamp sorts a list of ReplicaSet by creation timestamp, using their names as a tie breaker.
-type ReplicaSetsByCreationTimestamp []*appsv1.ReplicaSet
-
-func (o ReplicaSetsByCreationTimestamp) Len() int      { return len(o) }
-func (o ReplicaSetsByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o ReplicaSetsByCreationTimestamp) Less(i, j int) bool {
-	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
-		return o[i].Name < o[j].Name
+func compareName(a, b client.Object) int {
+	cmpName := cmp.Compare(a.GetName(), b.GetName())
+	// Use creation timestamp as a tie breaker:
+	if cmpName == 0 {
+		atime := a.GetCreationTimestamp()
+		btime := b.GetCreationTimestamp()
+		return atime.Time.Compare(btime.Time)
 	}
-	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+	return cmpName
 }
 
-// EventsByLastTimestamp sorts a list of Event by last timestamp, using their creation timestamp as a tie breaker.
-type EventsByLastTimestamp []*corev1.Event
-
-func (o EventsByLastTimestamp) Len() int      { return len(o) }
-func (o EventsByLastTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o EventsByLastTimestamp) Less(i, j int) bool {
-	if o[i].LastTimestamp.Equal(&o[j].LastTimestamp) {
-		return o[i].CreationTimestamp.Second() < o[j].CreationTimestamp.Second()
-	}
-	return o[i].LastTimestamp.Before(&o[j].LastTimestamp)
+func sortByCreationTimestamp[T client.Object](list []T) {
+	slices.SortFunc(list, func(a, b T) int {
+		return compareCreationTimestamp(a, b)
+	})
 }
 
-// PodsByCreationTimestamp sorts a list of Pod by creation timestamp, using their names as a tie breaker.
-type PodsByCreationTimestamp []*corev1.Pod
-
-func (o PodsByCreationTimestamp) Len() int      { return len(o) }
-func (o PodsByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o PodsByCreationTimestamp) Less(i, j int) bool {
-	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
-		return o[i].Name < o[j].Name
-	}
-	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+func sortByName[T client.Object](list []T) {
+	slices.SortFunc(list, func(a, b T) int {
+		return compareName(a, b)
+	})
 }
 
-// PodsByNameOlder sorts a list of Pod by size in descending order, using their creation timestamp or name as a tie breaker.
-// By using the creation timestamp, this sorts from old to new replica sets.
-type PodsByNameOlder []*corev1.Pod
-
-func (o PodsByNameOlder) Len() int      { return len(o) }
-func (o PodsByNameOlder) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o PodsByNameOlder) Less(i, j int) bool {
-	if o[i].Name == o[j].Name {
-		return PodsByCreationTimestamp(o).Less(i, j)
+func compareLastTimestamp(a, b *corev1.Event) int {
+	cmpLastTime := a.LastTimestamp.Time.Compare(b.LastTimestamp.Time)
+	if cmpLastTime == 0 {
+		return compareCreationTimestamp(a, b)
 	}
-	return o[i].Name > o[j].Name
+	return cmpLastTime
 }
 
-// PodsByNameNewer sorts a list of Pod by size in descending order, using their creation timestamp or name as a tie breaker.
-// By using the creation timestamp, this sorts from new to old replica sets.
-type PodsByNameNewer []*corev1.Pod
-
-func (o PodsByNameNewer) Len() int      { return len(o) }
-func (o PodsByNameNewer) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o PodsByNameNewer) Less(i, j int) bool {
-	if o[i].Name == o[j].Name {
-		return PodsByCreationTimestamp(o).Less(j, i)
-	}
-	return o[i].Name > o[j].Name
+func sortByLastTimestamp(list []*corev1.Event) {
+	slices.SortFunc(list, compareLastTimestamp)
 }
 
 // ComputeHash returns a hash value calculated from pod template and
