@@ -139,10 +139,5 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 		return scaleDownReplicant{Reason: "node needs to be evacuated"}, nil
 	}
 
-	// With no sessions
-	if !checkWaitTakeoverReady(instance, getEventList(r.ctx, s.Clientset, current)) {
-		return scaleDownReplicant{Reason: "node evacuation just finished"}, nil
-	}
-
 	return scaleDownReplicant{Pod: scaleDownPod}, nil
 }

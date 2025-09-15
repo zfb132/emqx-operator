@@ -159,11 +159,6 @@ func (s *syncCoreSets) chooseScaleDownCore(
 		return scaleDownCore{Reason: "node needs to be evacuated"}, nil
 	}
 
-	// With no sessions
-	if !checkWaitTakeoverReady(instance, getEventList(r.ctx, s.Clientset, current)) {
-		return scaleDownCore{Reason: "node evacuation just finished"}, nil
-	}
-
 	return scaleDownCore{Pod: scaleDownPod}, nil
 }
 

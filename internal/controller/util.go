@@ -2,7 +2,6 @@ package controller
 
 import (
 	"cmp"
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -18,31 +17,10 @@ import (
 	"github.com/tidwall/gjson"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-func getEventList(ctx context.Context, clientSet *kubernetes.Clientset, obj client.Object) []*corev1.Event {
-	// https://github.com/kubernetes-sigs/kubebuilder/issues/547#issuecomment-450772300
-	eventList, _ := clientSet.CoreV1().Events(obj.GetNamespace()).List(ctx, metav1.ListOptions{
-		FieldSelector: "involvedObject.name=" + obj.GetName(),
-	})
-	return handlerEventList(eventList)
-}
-
-func handlerEventList(list *corev1.EventList) []*corev1.Event {
-	listDeletes := []*corev1.Event{}
-	for _, e := range list.Items {
-		if e.Reason == "SuccessfulDelete" {
-			listDeletes = append(listDeletes, e.DeepCopy())
-		}
-	}
-	sortByLastTimestamp(listDeletes)
-	return listDeletes
-}
 
 func checkInitialDelaySecondsReady(instance *appsv2beta1.EMQX) bool {
 	_, condition := instance.Status.GetCondition(appsv2beta1.Available)
@@ -51,16 +29,6 @@ func checkInitialDelaySecondsReady(instance *appsv2beta1.EMQX) bool {
 	}
 	delay := time.Since(condition.LastTransitionTime.Time).Seconds()
 	return int32(delay) > instance.Spec.UpdateStrategy.InitialDelaySeconds
-}
-
-func checkWaitTakeoverReady(instance *appsv2beta1.EMQX, eList []*corev1.Event) bool {
-	if len(eList) == 0 {
-		return true
-	}
-
-	lastEvent := eList[len(eList)-1]
-	delay := time.Since(lastEvent.LastTimestamp.Time).Seconds()
-	return int32(delay) > instance.Spec.UpdateStrategy.EvacuationStrategy.WaitTakeover
 }
 
 // JustCheckPodTemplate will check only the differences between the podTemplate of the two statefulSets
@@ -159,18 +127,6 @@ func sortByName[T client.Object](list []T) {
 	slices.SortFunc(list, func(a, b T) int {
 		return compareName(a, b)
 	})
-}
-
-func compareLastTimestamp(a, b *corev1.Event) int {
-	cmpLastTime := a.LastTimestamp.Time.Compare(b.LastTimestamp.Time)
-	if cmpLastTime == 0 {
-		return compareCreationTimestamp(a, b)
-	}
-	return cmpLastTime
-}
-
-func sortByLastTimestamp(list []*corev1.Event) {
-	slices.SortFunc(list, compareLastTimestamp)
 }
 
 // ComputeHash returns a hash value calculated from pod template and
