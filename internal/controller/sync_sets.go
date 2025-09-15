@@ -23,22 +23,20 @@ func (s *syncSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subR
 	oldRsList := []*appsv1.ReplicaSet{}
 	for _, rs := range r.state.replicantSets {
 		if rs != currentRs && rs != updateRs {
-			oldRsList = append(oldRsList, rs.DeepCopy())
+			oldRsList = append(oldRsList, rs)
 		}
 	}
 
-	rsDiff := int32(len(oldRsList)) - *instance.Spec.RevisionHistoryLimit
-	if rsDiff > 0 {
-		for i := 0; i < int(rsDiff); i++ {
-			rs := oldRsList[i].DeepCopy()
-			// Avoid delete replica set with non-zero replica counts
-			if rs.Status.Replicas != 0 || *(rs.Spec.Replicas) != 0 || rs.Generation > rs.Status.ObservedGeneration || rs.DeletionTimestamp != nil {
-				continue
-			}
-			r.log.Info("trying to cleanup replicaSet for EMQX", "replicaSet", klog.KObj(rs), "EMQX", klog.KObj(instance))
-			if err := s.Client.Delete(r.ctx, rs); err != nil && !k8sErrors.IsNotFound(err) {
-				return subResult{err: err}
-			}
+	rsOutdated := len(oldRsList) - int(instance.Spec.RevisionHistoryLimit)
+	for i := 0; i < rsOutdated; i++ {
+		rs := oldRsList[i]
+		// Avoid delete replica set with non-zero replica counts
+		if rs.Status.Replicas != 0 || *(rs.Spec.Replicas) != 0 || rs.Generation > rs.Status.ObservedGeneration || rs.DeletionTimestamp != nil {
+			continue
+		}
+		r.log.Info("trying to cleanup replicaSet for EMQX", "replicaSet", klog.KObj(rs), "EMQX", klog.KObj(instance))
+		if err := s.Client.Delete(r.ctx, rs); err != nil && !k8sErrors.IsNotFound(err) {
+			return subResult{err: err}
 		}
 	}
 
@@ -47,39 +45,37 @@ func (s *syncSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subR
 	oldStsList := []*appsv1.StatefulSet{}
 	for _, sts := range r.state.coreSets {
 		if sts != currentSts && sts != updateSts {
-			oldStsList = append(oldStsList, sts.DeepCopy())
+			oldStsList = append(oldStsList, sts)
 		}
 	}
 
-	stsDiff := int32(len(oldStsList)) - *instance.Spec.RevisionHistoryLimit
-	if stsDiff > 0 {
-		for i := 0; i < int(stsDiff); i++ {
-			sts := oldStsList[i].DeepCopy()
-			// Avoid delete stateful set with non-zero replica counts
-			if sts.Status.Replicas != 0 || *(sts.Spec.Replicas) != 0 || sts.Generation > sts.Status.ObservedGeneration || sts.DeletionTimestamp != nil {
+	stsOutdated := len(oldStsList) - int(instance.Spec.RevisionHistoryLimit)
+	for i := 0; i < stsOutdated; i++ {
+		sts := oldStsList[i]
+		// Avoid delete stateful set with non-zero replica counts
+		if sts.Status.Replicas != 0 || *(sts.Spec.Replicas) != 0 || sts.Generation > sts.Status.ObservedGeneration || sts.DeletionTimestamp != nil {
+			continue
+		}
+		r.log.Info("trying to cleanup statefulSet for EMQX", "statefulSet", klog.KObj(sts), "EMQX", klog.KObj(instance))
+		if err := s.Client.Delete(r.ctx, sts); err != nil && !k8sErrors.IsNotFound(err) {
+			return subResult{err: err}
+		}
+
+		// Delete PVCs
+		pvcList := &corev1.PersistentVolumeClaimList{}
+		_ = s.Client.List(r.ctx, pvcList,
+			client.InNamespace(instance.Namespace),
+			client.MatchingLabels(sts.Spec.Selector.MatchLabels),
+		)
+
+		for _, p := range pvcList.Items {
+			pvc := p.DeepCopy()
+			if pvc.DeletionTimestamp != nil {
 				continue
 			}
-			r.log.Info("trying to cleanup statefulSet for EMQX", "statefulSet", klog.KObj(sts), "EMQX", klog.KObj(instance))
-			if err := s.Client.Delete(r.ctx, sts); err != nil && !k8sErrors.IsNotFound(err) {
+			r.log.Info("trying to cleanup persistentVolumeClaim for EMQX", "persistentVolumeClaim", klog.KObj(pvc), "EMQX", klog.KObj(instance))
+			if err := s.Client.Delete(r.ctx, pvc); err != nil && !k8sErrors.IsNotFound(err) {
 				return subResult{err: err}
-			}
-
-			// Delete PVCs
-			pvcList := &corev1.PersistentVolumeClaimList{}
-			_ = s.Client.List(r.ctx, pvcList,
-				client.InNamespace(instance.Namespace),
-				client.MatchingLabels(sts.Spec.Selector.MatchLabels),
-			)
-
-			for _, p := range pvcList.Items {
-				pvc := p.DeepCopy()
-				if pvc.DeletionTimestamp != nil {
-					continue
-				}
-				r.log.Info("trying to cleanup persistentVolumeClaim for EMQX", "persistentVolumeClaim", klog.KObj(pvc), "EMQX", klog.KObj(instance))
-				if err := s.Client.Delete(r.ctx, pvc); err != nil && !k8sErrors.IsNotFound(err) {
-					return subResult{err: err}
-				}
 			}
 		}
 	}

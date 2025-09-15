@@ -402,11 +402,6 @@ func (in *EMQXSpec) DeepCopyInto(out *EMQXSpec) {
 		}
 	}
 	out.Config = in.Config
-	if in.RevisionHistoryLimit != nil {
-		in, out := &in.RevisionHistoryLimit, &out.RevisionHistoryLimit
-		*out = new(int32)
-		**out = **in
-	}
 	out.UpdateStrategy = in.UpdateStrategy
 	in.CoreTemplate.DeepCopyInto(&out.CoreTemplate)
 	if in.ReplicantTemplate != nil {

@@ -35,7 +35,7 @@ var _ = Describe("Reconciler syncSets", func() {
 		}
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
-		instance.Spec.RevisionHistoryLimit = ptr.To(int32(3))
+		instance.Spec.RevisionHistoryLimit = 3
 		instance.Status = appsv2beta1.EMQXStatus{
 			Conditions: []metav1.Condition{
 				{
@@ -171,7 +171,7 @@ var _ = Describe("Reconciler syncSets", func() {
 				}
 			}
 			return count
-		}).WithTimeout(timeout).WithPolling(interval).Should(BeEquivalentTo(*instance.Spec.RevisionHistoryLimit))
+		}).WithTimeout(timeout).WithPolling(interval).Should(BeEquivalentTo(instance.Spec.RevisionHistoryLimit))
 
 		Eventually(func() int {
 			list := &appsv1.StatefulSetList{}
@@ -186,7 +186,7 @@ var _ = Describe("Reconciler syncSets", func() {
 				}
 			}
 			return count
-		}).WithTimeout(timeout).WithPolling(interval).Should(BeEquivalentTo(*instance.Spec.RevisionHistoryLimit))
+		}).WithTimeout(timeout).WithPolling(interval).Should(BeEquivalentTo(instance.Spec.RevisionHistoryLimit))
 
 		Eventually(func() int {
 			list := &corev1.PersistentVolumeClaimList{}
@@ -201,6 +201,6 @@ var _ = Describe("Reconciler syncSets", func() {
 				}
 			}
 			return count
-		}).WithTimeout(timeout).WithPolling(interval).Should(BeEquivalentTo(*instance.Spec.RevisionHistoryLimit))
+		}).WithTimeout(timeout).WithPolling(interval).Should(BeEquivalentTo(instance.Spec.RevisionHistoryLimit))
 	})
 })

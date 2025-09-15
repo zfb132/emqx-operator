@@ -15842,10 +15842,8 @@ spec:
                 type: object
               revisionHistoryLimit:
                 default: 3
-                description: |-
-                  The number of old ReplicaSets, old StatefulSet and old PersistentVolumeClaim to retain to allow rollback.
-                  This is a pointer to distinguish between explicit zero and not specified.
-                  Defaults to 3.
+                description: The number of old ReplicaSets, old StatefulSet and old
+                  PersistentVolumeClaim to retain to allow rollback.
                 format: int32
                 type: integer
               serviceAccountName:

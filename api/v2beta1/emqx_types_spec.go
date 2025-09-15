@@ -54,10 +54,8 @@ type EMQXSpec struct {
 	ClusterDomain string `json:"clusterDomain,omitempty"`
 
 	// The number of old ReplicaSets, old StatefulSet and old PersistentVolumeClaim to retain to allow rollback.
-	// This is a pointer to distinguish between explicit zero and not specified.
-	// Defaults to 3.
 	// +kubebuilder:default:=3
-	RevisionHistoryLimit *int32 `json:"revisionHistoryLimit,omitempty"`
+	RevisionHistoryLimit int32 `json:"revisionHistoryLimit,omitempty"`
 
 	// UpdateStrategy is the object that describes the EMQX blue-green update strategy
 	// +kubebuilder:default={type:Recreate,initialDelaySeconds:10,evacuationStrategy:{waitTakeover:10,connEvictRate:1000,sessEvictRate:1000}}
