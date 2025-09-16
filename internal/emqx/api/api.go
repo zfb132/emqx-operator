@@ -29,7 +29,7 @@ func IsUnavailable(err error) bool {
 	return false
 }
 
-func IsRequestClosed(err error) bool {
+func IsConnectionClosed(err error) bool {
 	return errors.Is(err, net.ErrClosed)
 }
 

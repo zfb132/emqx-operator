@@ -24,11 +24,8 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 
 	// If EMQX DS API is not available, skip this reconciliation step.
 	// We need this API to be available to ask it about replication status.
-	cluster, err := api.GetCluster(req)
+	cluster, err := api.GetDSCluster(req)
 	if err != nil {
-		if api.IsUnavailable(err) || emperror.Is(err, api.ErrorNotFound) {
-			return subResult{}
-		}
 		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
 	}
 

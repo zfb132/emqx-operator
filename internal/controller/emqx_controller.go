@@ -34,7 +34,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 
-	innerErr "github.com/emqx/emqx-operator/internal/errors"
+	"github.com/emqx/emqx-operator/internal/errors"
 	"github.com/emqx/emqx-operator/internal/handler"
 	req "github.com/emqx/emqx-operator/internal/requester"
 )
@@ -59,6 +59,10 @@ type subResult struct {
 
 type subReconciler interface {
 	reconcile(*reconcileRound, *appsv2beta1.EMQX) subResult
+}
+
+func subReconcilerName(s subReconciler) string {
+	return reflect.TypeOf(s).Elem().Name()
 }
 
 // EMQXReconciler reconciles a EMQX object
@@ -136,14 +140,16 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return subResult.result, nil
 		}
 		if subResult.err != nil {
-			if innerErr.IsCommonError(subResult.err) {
-				logger.V(1).Info("requeue reconcile", "reconciler", subReconciler, "reason", subResult.err)
+			if errors.IsCommonError(subResult.err) {
+				logger.Info(
+					"reconciler requeue",
+					"reconciler", subReconcilerName(subReconciler),
+					"reason", subResult.err)
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			r.EventRecorder.Eventf(instance, corev1.EventTypeWarning,
-				"ReconcilerFailed", "reconcile failed at step %s, reason: %s",
-				reflect.TypeOf(subReconciler).Elem().Name(),
-				subResult.err.Error(),
+				"ReconcilerFailed",
+				"reconcile failed at step %s, reason: %s", subReconcilerName(subReconciler), subResult.err.Error(),
 			)
 			return ctrl.Result{}, subResult.err
 		}

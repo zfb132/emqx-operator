@@ -8,7 +8,6 @@ import (
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,7 +46,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	if r.api != nil {
 		err := u.getEMQXNodes(r, instance)
 		if err != nil {
-			u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetNodeStatuses", err.Error())
+			return subResult{err: emperror.Wrap(err, "failed to get node status")}
 		}
 	}
 	for _, node := range status.CoreNodes {
@@ -66,7 +65,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		if err == nil {
 			status.NodeEvacuationsStatus = nodeEvacuationsStatus
 		} else {
-			u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetNodeEvacuationStatuses", err.Error())
+			return subResult{err: emperror.Wrap(err, "failed to get node evacuation status")}
 		}
 	}
 
@@ -80,7 +79,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		var err error
 		dsReplicationStatus, err = api.GetDSReplicationStatus(r.api)
 		if err != nil {
-			u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetDSReplicationStatus", err.Error())
+			return subResult{err: emperror.Wrap(err, "failed to get DS replication status")}
 		}
 	}
 	for _, db := range dsReplicationStatus.DBs {
