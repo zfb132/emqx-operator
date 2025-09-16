@@ -21,15 +21,17 @@ type RequesterInterface interface {
 	GetHost() string
 	GetUsername() string
 	GetPassword() string
+	GetDescription() string
 	Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error)
-	SwitchHost(host string) RequesterInterface
+	SwitchHost(host string, description string) RequesterInterface
 }
 
 type Requester struct {
-	Schema   string
-	Host     string
-	Username string
-	Password string
+	Schema      string
+	Host        string
+	Username    string
+	Password    string
+	Description string
 }
 
 func (requester *Requester) GetUsername() string {
@@ -51,13 +53,18 @@ func (requester *Requester) GetSchema() string {
 	return requester.Schema
 }
 
-func (r *Requester) SwitchHost(host string) RequesterInterface {
+func (requester *Requester) GetDescription() string {
+	return requester.Description
+}
+
+func (r *Requester) SwitchHost(host string, description string) RequesterInterface {
 	_, port, _ := net.SplitHostPort(r.GetHost())
 	requester := &Requester{
-		Schema:   r.GetSchema(),
-		Host:     net.JoinHostPort(host, port),
-		Username: r.GetUsername(),
-		Password: r.GetPassword(),
+		Schema:      r.GetSchema(),
+		Host:        net.JoinHostPort(host, port),
+		Username:    r.GetUsername(),
+		Password:    r.GetPassword(),
+		Description: description,
 	}
 	return requester
 }
@@ -145,7 +152,12 @@ func (f *MockRequester) GetSchema() string                           { return "h
 func (f *MockRequester) GetHost() string                             { return "" }
 func (f *MockRequester) GetUsername() string                         { return "" }
 func (f *MockRequester) GetPassword() string                         { return "" }
-func (f *MockRequester) SwitchHost(host string) RequesterInterface   { return f }
+func (f *MockRequester) GetDescription() string                      { return "MockRequester" }
+
+func (f *MockRequester) SwitchHost(host string, description string) RequesterInterface {
+	return f
+}
+
 func (f *MockRequester) Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 	return f.mockFunc(method, url, body, header)
 }

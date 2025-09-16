@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"net"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -54,18 +53,17 @@ func apiRequester(
 	}
 
 	corePods := state.podsWithRole("core")
-	sort.Slice(corePods, func(i, j int) bool {
-		return corePods[i].CreationTimestamp.Before(&corePods[j].CreationTimestamp)
-	})
+	sortByCreationTimestamp(corePods)
 	for _, pod := range corePods {
 		if pod.Status.PodIP != "" {
 			cond := util.FindPodCondition(pod, corev1.ContainersReady)
 			if cond != nil && cond.Status == corev1.ConditionTrue {
 				req := &req.Requester{
-					Schema:   schema,
-					Host:     net.JoinHostPort(pod.Status.PodIP, port),
-					Username: username,
-					Password: password,
+					Schema:      schema,
+					Host:        net.JoinHostPort(pod.Status.PodIP, port),
+					Username:    username,
+					Password:    password,
+					Description: pod.Name,
 				}
 				return req, nil
 			}

@@ -25,7 +25,7 @@ func (u *updatePodConditions) reconcile(r *reconcileRound, instance *appsv2beta1
 		if r.state.partOfUpdateSet(pod, instance) {
 			cond := util.FindPodCondition(pod, corev1.ContainersReady)
 			if cond != nil && cond.Status == corev1.ConditionTrue {
-				req := r.api.SwitchHost(pod.Status.PodIP)
+				req := r.api.SwitchHost(pod.Status.PodIP, pod.Name)
 				status := api.AvailabilityCheck(req)
 				util.SwitchPodConditionStatus(onServingCondition, status)
 			}

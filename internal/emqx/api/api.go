@@ -41,11 +41,11 @@ func request(req req.RequesterInterface, method string, path string, body []byte
 	url := req.GetURL(path)
 	resp, body, err := req.Request(method, url, body, header)
 	if err != nil {
-		return nil, emperror.Wrapf(err, "error accessing EMQX API %s", url.String())
+		return nil, emperror.Wrapf(err, "error accessing %s API %s", req.GetDescription(), url.String())
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		err := apiError{StatusCode: resp.StatusCode, Message: string(body)}
-		return nil, emperror.Wrapf(err, "error accessing EMQX API %s", url.String())
+		return nil, emperror.Wrapf(err, "error accessing %s API %s", req.GetDescription(), url.String())
 	}
 	return body, nil
 }

@@ -86,7 +86,7 @@ func (u *dsReflectPodCondition) getSuitableRequester(
 		if r.state.partOfUpdateSet(pod, instance) {
 			ready := util.FindPodCondition(pod, corev1.ContainersReady)
 			if ready != nil && ready.Status == corev1.ConditionTrue {
-				return r.api.SwitchHost(pod.Status.PodIP)
+				return r.api.SwitchHost(pod.Status.PodIP, pod.Name)
 			}
 		}
 	}
