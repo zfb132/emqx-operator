@@ -133,22 +133,18 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 
 	condition := status.GetLastTrueCondition()
 	if condition == nil {
-		condition = &metav1.Condition{
-			Type:   appsv2beta1.Initialized,
-			Status: metav1.ConditionTrue,
-		}
+		instance.Status.SetTrueCondition(appsv2beta1.Initialized)
+		u.updateStatusCondition(r, instance)
+		return
 	}
 
 	switch condition.Type {
 
 	case appsv2beta1.Initialized:
-		status.RemoveCondition(appsv2beta1.Ready)
-		status.RemoveCondition(appsv2beta1.Available)
-		status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
-		status.RemoveCondition(appsv2beta1.ReplicantNodesProgressing)
-		status.RemoveCondition(appsv2beta1.CoreNodesReady)
-		status.RemoveCondition(appsv2beta1.CoreNodesProgressing)
-		u.statusTransition(r, instance, appsv2beta1.CoreNodesProgressing)
+		updateSts := r.state.updateCoreSet(instance)
+		if updateSts != nil {
+			u.statusTransition(r, instance, appsv2beta1.CoreNodesProgressing)
+		}
 
 	case appsv2beta1.CoreNodesProgressing:
 		updateSts := r.state.updateCoreSet(instance)
@@ -174,14 +170,14 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesReady)
 			}
 		} else {
-			u.statusTransition(r, instance, appsv2beta1.Initialized)
+			u.resetConditions(r, instance, "NoReplicants")
 		}
 
 	case appsv2beta1.ReplicantNodesReady:
 		if hasReplicants {
 			u.statusTransition(r, instance, appsv2beta1.Available)
 		} else {
-			u.statusTransition(r, instance, appsv2beta1.Initialized)
+			u.resetConditions(r, instance, "NoReplicants")
 		}
 
 	case appsv2beta1.Available:
@@ -208,20 +204,33 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 		updateSts := r.state.updateCoreSet(instance)
 		if updateSts != nil &&
 			updateSts.Status.ReadyReplicas != status.CoreNodesStatus.Replicas {
-			u.statusTransition(r, instance, appsv2beta1.Initialized)
+			u.resetConditions(r, instance, "CoreNodesNotReady")
+			return
 		}
 
 		if hasReplicants {
 			updateRs := r.state.updateReplicantSet(instance)
 			if updateRs != nil &&
 				updateRs.Status.ReadyReplicas != status.ReplicantNodesStatus.Replicas {
-				status.RemoveCondition(appsv2beta1.Ready)
-				status.RemoveCondition(appsv2beta1.Available)
-				status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
-				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesProgressing)
+				u.resetConditions(r, instance, "ReplicantNodesNotReady")
+				return
 			}
 		}
 	}
+}
+
+func (u *updateStatus) resetConditions(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	reason string,
+) {
+	hasReplicants := appsv2beta1.IsExistReplicant(instance)
+	if !hasReplicants {
+		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesProgressing)
+		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
+	}
+	instance.Status.ResetConditions(reason)
+	u.updateStatusCondition(r, instance)
 }
 
 func (u *updateStatus) statusTransition(

@@ -17,7 +17,7 @@ limitations under the License.
 package v2beta1
 
 import (
-	"sort"
+	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -114,17 +114,22 @@ const (
 	Ready                     string = "Ready"
 )
 
-func (s *EMQXStatus) SetCondition(c metav1.Condition) {
-	c.LastTransitionTime = metav1.Now()
-	pos, _ := s.GetCondition(c.Type)
-	if pos >= 0 {
-		s.Conditions[pos] = c
-	} else {
-		s.Conditions = append(s.Conditions, c)
+func (s *EMQXStatus) ResetConditions(reason string) {
+	conditionTypes := []string{}
+	for _, c := range s.Conditions {
+		if c.Type != Initialized && c.Status == metav1.ConditionTrue {
+			conditionTypes = append(conditionTypes, c.Type)
+		}
 	}
-	sort.Slice(s.Conditions, func(i, j int) bool {
-		return s.Conditions[j].LastTransitionTime.Before(&s.Conditions[i].LastTransitionTime)
-	})
+	for _, conditionType := range conditionTypes {
+		s.SetFalseCondition(conditionType, reason)
+	}
+}
+
+func (s *EMQXStatus) SetCondition(c metav1.Condition) {
+	s.RemoveCondition(c.Type)
+	c.LastTransitionTime = metav1.Now()
+	s.Conditions = slices.Insert(s.Conditions, 0, c)
 }
 
 func (s *EMQXStatus) SetTrueCondition(conditionType string) {
@@ -132,6 +137,14 @@ func (s *EMQXStatus) SetTrueCondition(conditionType string) {
 		Type:   conditionType,
 		Status: metav1.ConditionTrue,
 		Reason: conditionType,
+	})
+}
+
+func (s *EMQXStatus) SetFalseCondition(conditionType string, reason string) {
+	s.SetCondition(metav1.Condition{
+		Type:   conditionType,
+		Status: metav1.ConditionFalse,
+		Reason: reason,
 	})
 }
 
@@ -165,10 +178,9 @@ func (s *EMQXStatus) IsConditionTrue(conditionType string) bool {
 
 func (s *EMQXStatus) RemoveCondition(conditionType string) {
 	pos, _ := s.GetCondition(conditionType)
-	if pos == -1 {
-		return
+	if pos != -1 {
+		s.Conditions = slices.Delete(s.Conditions, pos, pos+1)
 	}
-	s.Conditions = append(s.Conditions[:pos], s.Conditions[pos+1:]...)
 }
 
 func (s *DSReplicationStatus) IsStable() bool {

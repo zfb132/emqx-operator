@@ -68,7 +68,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 					// And then we will rollback EMQX CR spec, the EMQX operator controller will create a new replicaSet.
 					// But the new replicaSet will be the same as the previous one, so we didn't need to create it, just change the EMQX status.
 					if rsHash == instance.Status.ReplicantNodesStatus.CurrentRevision {
-						_ = a.updateEMQXStatus(r, instance, "RevertReplicaSet", "Revert to current replicaSet", rsHash)
+						_ = a.updateEMQXStatus(r, instance, "RevertReplicaSet", rsHash)
 						return subResult{}
 					}
 				}
@@ -81,7 +81,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 			}
 			return subResult{err: emperror.Wrap(err, "failed to create replicaSet")}
 		}
-		_ = a.updateEMQXStatus(r, instance, "CreateReplicaSet", "Create new replicaSet", rsHash)
+		_ = a.updateEMQXStatus(r, instance, "CreateReplicaSet", rsHash)
 		return subResult{}
 	}
 
@@ -108,26 +108,15 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 		}); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update replicaSet")}
 		}
-		_ = a.updateEMQXStatus(r, instance, "UpdateReplicaSet", "Update exist replicaSet", rsHash)
+		_ = a.updateEMQXStatus(r, instance, "UpdateReplicaSet", rsHash)
 	}
 	return subResult{}
 }
 
-func (a *addReplicantSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_ = a.Client.Get(r.ctx, client.ObjectKeyFromObject(instance), instance)
-		instance.Status.SetCondition(metav1.Condition{
-			Type:    appsv2beta1.ReplicantNodesProgressing,
-			Status:  metav1.ConditionTrue,
-			Reason:  reason,
-			Message: message,
-		})
-		instance.Status.RemoveCondition(appsv2beta1.Ready)
-		instance.Status.RemoveCondition(appsv2beta1.Available)
-		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
-		instance.Status.ReplicantNodesStatus.UpdateRevision = podTemplateHash
-		return a.Client.Status().Update(r.ctx, instance)
-	})
+func (a *addReplicantSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, podTemplateHash string) error {
+	instance.Status.ResetConditions(reason)
+	instance.Status.ReplicantNodesStatus.UpdateRevision = podTemplateHash
+	return a.Client.Status().Update(r.ctx, instance)
 }
 
 func getNewReplicaSet(instance *appsv2beta1.EMQX, conf *config.Conf) *appsv1.ReplicaSet {

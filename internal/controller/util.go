@@ -17,6 +17,7 @@ import (
 	"github.com/tidwall/gjson"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,11 +25,11 @@ import (
 
 func checkInitialDelaySecondsReady(instance *appsv2beta1.EMQX) bool {
 	_, condition := instance.Status.GetCondition(appsv2beta1.Available)
-	if condition == nil || condition.Type != appsv2beta1.Available {
+	if condition == nil || condition.Status != metav1.ConditionTrue {
 		return false
 	}
 	delay := time.Since(condition.LastTransitionTime.Time).Seconds()
-	return int32(delay) > instance.Spec.UpdateStrategy.InitialDelaySeconds
+	return delay > float64(instance.Spec.UpdateStrategy.InitialDelaySeconds)
 }
 
 // JustCheckPodTemplate will check only the differences between the podTemplate of the two statefulSets

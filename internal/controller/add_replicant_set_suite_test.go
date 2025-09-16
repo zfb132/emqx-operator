@@ -51,9 +51,8 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
-	BeforeEach(func() {
-		a = &addReplicantSet{emqxReconciler}
-
+	BeforeAll(func() {
+		// Create namespace:
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "controller-v2beta1-add-emqx-repl-test",
@@ -62,7 +61,15 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 				},
 			},
 		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+	})
 
+	AfterAll(func() {
+		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
+	})
+
+	BeforeEach(func() {
+		// Create instance:
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
 		instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
@@ -79,18 +86,30 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 					Type:               appsv2beta1.Ready,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
+					Reason:             appsv2beta1.Ready,
 				},
 				{
 					Type:               appsv2beta1.CoreNodesReady,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
+					Reason:             appsv2beta1.CoreNodesReady,
+				},
+				{
+					Type:               appsv2beta1.ReplicantNodesReady,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
+					Reason:             appsv2beta1.ReplicantNodesReady,
+				},
+				{
+					Type:               appsv2beta1.Initialized,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -10)},
+					Reason:             appsv2beta1.Initialized,
 				},
 			},
 		}
-	})
-
-	It("create namespace", func() {
-		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		// Instantiate reconciler:
+		a = &addReplicantSet{emqxReconciler}
 	})
 
 	Context("replicant template is nil", func() {
@@ -124,7 +143,6 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 	})
 
 	Context("replicant template is not nil, and core code is ready", func() {
-
 		It("should create replicaSet", func() {
 			round := replicantSetsReconcileRound(instance)
 			Eventually(a.reconcile).WithArguments(round, instance).
@@ -138,10 +156,10 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 					)),
 				))
 		})
-
 	})
 
 	Context("scale down replicas count", func() {
+
 		BeforeAll(func() {
 			Eventually(adoptReplicantSet).WithArguments(instance).Should(Not(BeNil()))
 		})
@@ -181,6 +199,7 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 	})
 
 	Context("scale up replicas count", func() {
+
 		BeforeAll(func() {
 			Eventually(adoptReplicantSet).WithArguments(instance).Should(Not(BeNil()))
 		})
@@ -199,18 +218,22 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 				Should(ConsistOf(
 					HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(4))),
 				))
-			// Status conditions should reset to `ReplicantNodesProgressing`:
+			// Status conditions should reset:
 			Eventually(actualInstance).WithArguments(instance).
 				Should(And(
-					WithTransform(func(emqx *appsv2beta1.EMQX) string { return emqx.Status.GetLastTrueCondition().Type }, Equal(appsv2beta1.ReplicantNodesProgressing)),
-					HaveCondition(appsv2beta1.Ready, BeNil()),
-					HaveCondition(appsv2beta1.Available, BeNil()),
-					HaveCondition(appsv2beta1.ReplicantNodesReady, BeNil()),
+					WithTransform(
+						func(emqx *appsv2beta1.EMQX) *metav1.Condition { return emqx.Status.GetLastTrueCondition() },
+						HaveField("Type", Equal(appsv2beta1.Initialized)),
+					),
+					HaveCondition(appsv2beta1.Ready, HaveField("Status", Equal(metav1.ConditionFalse))),
+					HaveCondition(appsv2beta1.ReplicantNodesReady, HaveField("Status", Equal(metav1.ConditionFalse))),
 				))
 		})
+
 	})
 
 	Context("change image", func() {
+
 		BeforeAll(func() {
 			Eventually(adoptReplicantSet).WithArguments(instance).Should(Not(BeNil()))
 		})
@@ -234,15 +257,15 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 			// Status conditions should reset to `ReplicantNodesProgressing`:
 			Eventually(actualInstance).WithArguments(instance).
 				Should(And(
-					WithTransform(func(emqx *appsv2beta1.EMQX) string { return emqx.Status.GetLastTrueCondition().Type }, Equal(appsv2beta1.ReplicantNodesProgressing)),
-					HaveCondition(appsv2beta1.Ready, BeNil()),
-					HaveCondition(appsv2beta1.Available, BeNil()),
-					HaveCondition(appsv2beta1.ReplicantNodesReady, BeNil()),
+					WithTransform(
+						func(emqx *appsv2beta1.EMQX) *metav1.Condition { return emqx.Status.GetLastTrueCondition() },
+						HaveField("Type", Equal(appsv2beta1.Initialized)),
+					),
+					HaveCondition(appsv2beta1.Ready, HaveField("Status", Equal(metav1.ConditionFalse))),
+					HaveCondition(appsv2beta1.ReplicantNodesReady, HaveField("Status", Equal(metav1.ConditionFalse))),
 				))
 		})
+
 	})
 
-	It("delete namespace", func() {
-		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
-	})
 })

@@ -59,7 +59,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 					// And then we will rollback EMQX CR spec, the EMQX operator controller will create a new statefulSet.
 					// But the new statefulSet will be the same as the previous one, so we didn't need to create it, just change the EMQX status.
 					if stsHash == instance.Status.CoreNodesStatus.CurrentRevision {
-						_ = a.updateEMQXStatus(r, instance, "RevertStatefulSet", "Revert to current statefulSet", stsHash)
+						_ = a.updateEMQXStatus(r, instance, "RevertStatefulSet", stsHash)
 						return subResult{}
 					}
 				}
@@ -72,7 +72,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 			}
 			return subResult{err: emperror.Wrap(err, "failed to create statefulSet")}
 		}
-		updateResult := a.updateEMQXStatus(r, instance, "CreateNewStatefulSet", "Create new statefulSet", stsHash)
+		updateResult := a.updateEMQXStatus(r, instance, "CreateNewStatefulSet", stsHash)
 		return subResult{err: updateResult}
 	}
 
@@ -104,27 +104,16 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		}); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update statefulSet")}
 		}
-		updateResult := a.updateEMQXStatus(r, instance, "UpdateStatefulSet", "Update exist statefulSet", stsHash)
+		updateResult := a.updateEMQXStatus(r, instance, "UpdateStatefulSet", stsHash)
 		return subResult{err: updateResult}
 	}
 	return subResult{}
 }
 
-func (a *addCoreSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, message, podTemplateHash string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_ = a.Client.Get(r.ctx, client.ObjectKeyFromObject(instance), instance)
-		instance.Status.SetCondition(metav1.Condition{
-			Type:    appsv2beta1.CoreNodesProgressing,
-			Status:  metav1.ConditionTrue,
-			Reason:  reason,
-			Message: message,
-		})
-		instance.Status.RemoveCondition(appsv2beta1.Ready)
-		instance.Status.RemoveCondition(appsv2beta1.Available)
-		instance.Status.RemoveCondition(appsv2beta1.CoreNodesReady)
-		instance.Status.CoreNodesStatus.UpdateRevision = podTemplateHash
-		return a.Client.Status().Update(r.ctx, instance)
-	})
+func (a *addCoreSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, podTemplateHash string) error {
+	instance.Status.ResetConditions(reason)
+	instance.Status.CoreNodesStatus.UpdateRevision = podTemplateHash
+	return a.Client.Status().Update(r.ctx, instance)
 }
 
 func getNewStatefulSet(instance *appsv2beta1.EMQX, conf *config.Conf) *appsv1.StatefulSet {
