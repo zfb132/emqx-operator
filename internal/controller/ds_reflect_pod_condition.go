@@ -25,10 +25,10 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 	// If EMQX DS API is not available, skip this reconciliation step.
 	// We need this API to be available to ask it about replication status.
 	cluster, err := api.GetCluster(req)
-	if err != nil && emperror.Is(err, api.ErrorNotFound) {
-		return subResult{}
-	}
 	if err != nil {
+		if api.IsUnavailable(err) || emperror.Is(err, api.ErrorNotFound) {
+			return subResult{}
+		}
 		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
 	}
 
@@ -81,8 +81,9 @@ func (u *dsReflectPodCondition) getSuitableRequester(
 	instance *appsv2beta1.EMQX,
 ) req.RequesterInterface {
 	// Prefer node that is part of "update" StatefulSet (if any).
-	for _, core := range instance.Status.CoreNodes {
-		pod := r.state.podWithName(core.PodName)
+	corePods := r.state.podsWithRole("core")
+	sortByCreationTimestamp(corePods)
+	for _, pod := range corePods {
 		if r.state.partOfUpdateSet(pod, instance) {
 			ready := util.FindPodCondition(pod, corev1.ContainersReady)
 			if ready != nil && ready.Status == corev1.ConditionTrue {

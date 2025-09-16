@@ -1,8 +1,11 @@
 package api
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"syscall"
 
 	emperror "emperror.dev/errors"
 	req "github.com/emqx/emqx-operator/internal/requester"
@@ -17,6 +20,18 @@ var (
 	ErrorNotFound           = apiError{StatusCode: 404}
 	ErrorServiceUnavailable = apiError{StatusCode: 503}
 )
+
+func IsUnavailable(err error) bool {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno == syscall.ECONNREFUSED || errno == syscall.ECONNABORTED
+	}
+	return false
+}
+
+func IsRequestClosed(err error) bool {
+	return errors.Is(err, net.ErrClosed)
+}
 
 func (e apiError) Error() string {
 	return fmt.Sprintf("HTTP %d, response: %s", e.StatusCode, e.Message)
