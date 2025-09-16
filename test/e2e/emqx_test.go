@@ -188,17 +188,6 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 				return out
 			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(ContainSubstring("connection_eviction_rate"))
 
-			By(("deleting old storage statefulSet pods by hands, so that can be running faster"))
-			cmd = exec.Command("kubectl", "get", "sts", storageSts.Name, "-o", "jsonpath={.status.currentRevision}")
-			storageStsCurrentRevision, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get statefulset currentRevision")
-			cmd = exec.Command(
-				"kubectl", "delete", "pod",
-				"-l", "controller-revision-hash="+storageStsCurrentRevision,
-			)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to delete storage pods")
-
 			verifyEMQXStatus(coreReplicas, &changingTime)
 			verifyNoReplicants()
 
