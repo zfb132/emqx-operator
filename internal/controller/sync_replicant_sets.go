@@ -40,7 +40,7 @@ func (s *syncReplicantSets) migrateSet(
 ) subResult {
 	admission, err := s.chooseScaleDownReplicant(r, instance, current)
 	if err != nil {
-		return subResult{err: emperror.Wrap(err, "failed to check if old replicaSet can be scaled down")}
+		return subResult{err: err}
 	}
 	if admission.Pod != nil {
 		if admission.Pod.Annotations == nil {
@@ -56,7 +56,7 @@ func (s *syncReplicantSets) migrateSet(
 		// https://github.com/emqx/emqx-operator/issues/1105
 		*current.Spec.Replicas = *current.Spec.Replicas - 1
 		if err := s.Client.Update(r.ctx, current); err != nil {
-			return subResult{err: emperror.Wrap(err, "failed to scale down old replicaSet")}
+			return subResult{err: emperror.Wrap(err, "failed to scale down current replicantSet")}
 		}
 	}
 	return subResult{}
@@ -67,9 +67,7 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	instance *appsv2beta1.EMQX,
 	current *appsv1.ReplicaSet,
 ) (scaleDownReplicant, error) {
-	var err error
 	var scaleDownPod *corev1.Pod
-	var scaleDownNodeName string
 	var scaleDownPodInfo *appsv2beta1.EMQXNode
 	status := &instance.Status
 
@@ -88,7 +86,7 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	// If a pod is already being deleted, return it.
 	for _, pod := range currentPods {
 		if pod.DeletionTimestamp != nil {
-			return scaleDownReplicant{Reason: "pod deletion in progress"}, nil
+			return scaleDownReplicant{Reason: fmt.Sprintf("pod %s deletion in progress", pod.Name)}, nil
 		}
 		if _, ok := pod.Annotations["controller.kubernetes.io/pod-deletion-cost"]; ok {
 			return scaleDownReplicant{Pod: pod, Reason: "pod already marked for deletion"}, nil
@@ -96,24 +94,31 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	}
 
 	if len(status.NodeEvacuationsStatus) > 0 {
-		if status.NodeEvacuationsStatus[0].State != "prohibiting" {
-			return scaleDownReplicant{Reason: "node evacuation is still in progress"}, nil
+		evacuatingNode := status.NodeEvacuationsStatus[0]
+		if evacuatingNode.State != "prohibiting" {
+			return scaleDownReplicant{Reason: fmt.Sprintf("node %s evacuation in progress", evacuatingNode.Node)}, nil
 		}
-		scaleDownNodeName = status.NodeEvacuationsStatus[0].Node
 		for _, node := range status.ReplicantNodes {
-			if node.Node == scaleDownNodeName {
+			if node.Node == evacuatingNode.Node {
 				scaleDownPodInfo = &node
 				scaleDownPod = r.state.podWithName(node.PodName)
 				break
 			}
 		}
+		if scaleDownPodInfo == nil {
+			return scaleDownReplicant{Reason: fmt.Sprintf("evacuated node %s already deleted", evacuatingNode.Node)}, nil
+		}
 	} else {
 		// If there is no node evacuation, return the oldest pod.
 		scaleDownPod = currentPods[0]
-		scaleDownNodeName = fmt.Sprintf("emqx@%s", scaleDownPod.Status.PodIP)
-		scaleDownPodInfo, err = api.NodeInfo(r.api, scaleDownNodeName)
-		if err != nil {
-			return scaleDownReplicant{}, emperror.Wrap(err, "failed to get node info")
+		for _, node := range status.ReplicantNodes {
+			if node.PodName == scaleDownPod.Name {
+				scaleDownPodInfo = &node
+				break
+			}
+		}
+		if scaleDownPodInfo == nil {
+			return scaleDownReplicant{}, emperror.Errorf("node is missing for pod %s", scaleDownPod.Name)
 		}
 		// If the pod is already stopped, return it.
 		if scaleDownPodInfo.NodeStatus == "stopped" {
@@ -125,18 +130,23 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	// While replicants are not supposed to be DS replication sites, check it for safety.
 	dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
 	if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
-		return scaleDownReplicant{Reason: "pod is still a DS replication site"}, nil
+		return scaleDownReplicant{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
 	}
 
 	// If the pod has at least one session, start node evacuation.
 	if scaleDownPodInfo.Session > 0 {
+		nodeName := scaleDownPodInfo.Node
 		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := migrationTargetNodes(r, instance)
-		if err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNodeName); err != nil {
+		if len(migrateTo) == 0 {
+			return scaleDownReplicant{Reason: fmt.Sprintf("no nodes to migrate %s to", nodeName)}, nil
+		}
+		err := api.StartEvacuation(r.api, strategy, migrateTo, nodeName)
+		if err != nil {
 			return scaleDownReplicant{}, emperror.Wrap(err, "failed to start node evacuation")
 		}
-		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s is being evacuated", scaleDownNodeName))
-		return scaleDownReplicant{Reason: "node needs to be evacuated"}, nil
+		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s evacuation started", nodeName))
+		return scaleDownReplicant{Reason: fmt.Sprintf("node %s evacuation started", nodeName)}, nil
 	}
 
 	return scaleDownReplicant{Pod: scaleDownPod}, nil

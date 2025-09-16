@@ -32,7 +32,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	needCreate := false
 	updateCoreSet := r.state.updateCoreSet(instance)
 	if updateCoreSet == nil {
-		r.log.Info("going to create new statefulSet",
+		r.log.Info("creating new statefulSet",
 			"statefulSet", klog.KObj(sts),
 			"reason", "no existing statefulSet",
 		)
@@ -40,7 +40,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	} else {
 		patchResult, _ := a.Patcher.Calculate(updateCoreSet, sts, justCheckPodTemplate())
 		if !patchResult.IsEmpty() {
-			r.log.Info("going to create new statefulSet",
+			r.log.Info("creating new statefulSet",
 				"statefulSet", klog.KObj(sts),
 				"reason", "pod template has changed",
 				"patch", string(patchResult.Patch),
@@ -91,7 +91,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	)
 	if !patchResult.IsEmpty() {
 		// Update statefulSet
-		r.log.Info("going to update statefulSet",
+		r.log.Info("updating statefulSet",
 			"statefulSet", klog.KObj(sts),
 			"reason", "statefulSet has changed",
 			"patch", string(patchResult.Patch),

@@ -41,7 +41,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 	needCreate := false
 	updateReplicantSet := r.state.updateReplicantSet(instance)
 	if updateReplicantSet == nil {
-		r.log.Info("going to create new replicaSet",
+		r.log.Info("creating new replicaSet",
 			"replicaSet", klog.KObj(rs),
 			"reason", "no existing replicaSet",
 		)
@@ -49,7 +49,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 	} else {
 		patchResult, _ := a.Patcher.Calculate(updateReplicantSet, rs, justCheckPodTemplate())
 		if !patchResult.IsEmpty() {
-			r.log.Info("going to create new replicaSet",
+			r.log.Info("creating new replicaSet",
 				"replicaSet", klog.KObj(rs),
 				"reason", "pod template has changed",
 				"patch", string(patchResult.Patch),
@@ -95,7 +95,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
 	); !patchResult.IsEmpty() {
 		// Update replicaSet
-		r.log.Info("going to update replicaSet",
+		r.log.Info("updating replicaSet",
 			"replicaSet", klog.KObj(rs),
 			"reason", "replicaSet has changed",
 			"patch", string(patchResult.Patch),

@@ -9,7 +9,6 @@ import (
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type syncCoreSets struct {
@@ -41,7 +40,7 @@ func (s *syncCoreSets) migrateSet(
 ) subResult {
 	admission, err := s.chooseScaleDownCore(r, instance, current)
 	if err != nil {
-		return subResult{err: emperror.Wrap(err, "failed to check if old statefulSet can be scaled down")}
+		return subResult{err: err}
 	}
 	if admission.Pod != nil {
 		*current.Spec.Replicas = *current.Spec.Replicas - 1
@@ -72,7 +71,7 @@ func (s *syncCoreSets) scaleDownSet(
 	if currentReplicas > desiredReplicas {
 		admission, err := s.chooseScaleDownCore(r, instance, current)
 		if err != nil {
-			return subResult{err: emperror.Wrap(err, "failed to check if statefulSet can be scaled down")}
+			return subResult{err: err}
 		}
 		if admission.Pod != nil {
 			*current.Spec.Replicas = *current.Spec.Replicas - 1
@@ -109,20 +108,21 @@ func (s *syncCoreSets) chooseScaleDownCore(
 		}
 	}
 
-	// Get the pod to be scaled down next.
-	scaleDownPod := &corev1.Pod{}
-	err := s.Client.Get(r.ctx, instance.NamespacedName(
-		fmt.Sprintf("%s-%d", current.Name, *current.Spec.Replicas-1),
-	), scaleDownPod)
+	// List the pods managed by the current coreSet.
+	pods := r.state.podsManagedBy(current.UID)
+	sortByName(pods)
 
 	// No more pods, no need to scale down.
-	if err != nil && k8sErrors.IsNotFound(err) {
+	if len(pods) == 0 {
 		return scaleDownCore{Reason: "no more pods"}, nil
 	}
 
+	// Get the pod to be scaled down next.
+	scaleDownPod := pods[len(pods)-1]
+
 	// Disallow scaling down the pod that is already being deleted.
 	if scaleDownPod.DeletionTimestamp != nil {
-		return scaleDownCore{Reason: "pod deletion in progress"}, nil
+		return scaleDownCore{Reason: fmt.Sprintf("pod %s deletion in progress", scaleDownPod.Name)}, nil
 	}
 
 	// Disallow scaling down the pod that is still a DS replication site.
@@ -132,15 +132,20 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	if r.conf.IsDSEnabled() {
 		dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
 		if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
-			return scaleDownCore{Reason: "pod is still a DS replication site"}, nil
+			return scaleDownCore{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
 		}
 	}
 
 	// Get the node info of the pod to be scaled down.
-	scaleDownNodeName := fmt.Sprintf("emqx@%s.%s.%s.svc.cluster.local", scaleDownPod.Name, current.Spec.ServiceName, current.Namespace)
-	scaleDownNode, err := api.NodeInfo(r.api, scaleDownNodeName)
-	if err != nil {
-		return scaleDownCore{}, emperror.Wrap(err, "failed to get node info by API")
+	var scaleDownNode *appsv2beta1.EMQXNode
+	for _, node := range instance.Status.CoreNodes {
+		if node.PodName == scaleDownPod.Name {
+			scaleDownNode = &node
+			break
+		}
+	}
+	if scaleDownNode == nil {
+		return scaleDownCore{}, emperror.Errorf("node is missing for pod %s", scaleDownPod.Name)
 	}
 
 	// Scale down the node that is already stopped.
@@ -152,11 +157,15 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	if scaleDownNode.Session > 0 {
 		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := migrationTargetNodes(r, instance)
-		if err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNode.Node); err != nil {
+		if len(migrateTo) == 0 {
+			return scaleDownCore{Reason: fmt.Sprintf("no nodes to migrate %s to", scaleDownNode.Node)}, nil
+		}
+		err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNode.Node)
+		if err != nil {
 			return scaleDownCore{}, emperror.Wrap(err, "failed to start node evacuation")
 		}
-		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s is being evacuated", scaleDownNode.Node))
-		return scaleDownCore{Reason: "node needs to be evacuated"}, nil
+		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s evacuation started", scaleDownNode.Node))
+		return scaleDownCore{Reason: fmt.Sprintf("node %s needs to be evacuated", scaleDownNode.Node)}, nil
 	}
 
 	return scaleDownCore{Pod: scaleDownPod}, nil
