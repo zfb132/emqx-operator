@@ -167,7 +167,7 @@ func main() {
 	}
 
 	if err = controller.NewRebalanceReconciler(mgr).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "EMQX")
+		setupLog.Error(err, "unable to create controller", "controller", "Rebalance")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
