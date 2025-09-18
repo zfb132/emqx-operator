@@ -295,24 +295,29 @@ func switchReplicantSet(
 func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQX) error {
 	emqxNodes, err := api.Nodes(r.api)
 	if err != nil {
-		return emperror.Wrap(err, "failed to get node statues by API")
+		return err
 	}
 
 	status := &instance.Status
 	status.CoreNodes = []appsv2beta1.EMQXNode{}
 	status.ReplicantNodes = []appsv2beta1.EMQXNode{}
 	for _, node := range emqxNodes {
+		list := &status.CoreNodes
+		host := extractHostname(node.Node)
+		if node.Role == "replicant" {
+			list = &status.ReplicantNodes
+		}
 		for _, pod := range r.state.pods {
-			host := strings.Split(node.Node[strings.Index(node.Node, "@")+1:], ":")[0]
 			if node.Role == "core" && strings.HasPrefix(host, pod.Name) {
 				node.PodName = pod.Name
-				status.CoreNodes = append(status.CoreNodes, node)
+				break
 			}
 			if node.Role == "replicant" && host == pod.Status.PodIP {
 				node.PodName = pod.Name
-				status.ReplicantNodes = append(status.ReplicantNodes, node)
+				break
 			}
 		}
+		*list = append(*list, node)
 	}
 
 	sort.Slice(status.CoreNodes, func(i, j int) bool {
@@ -323,4 +328,10 @@ func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQ
 	})
 
 	return nil
+}
+
+func extractHostname(node string) string {
+	// Example: emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local
+	// Example: emqx@10.244.0.23
+	return strings.Split(node[strings.Index(node, "@")+1:], ":")[0]
 }

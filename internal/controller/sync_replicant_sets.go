@@ -68,7 +68,7 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	current *appsv1.ReplicaSet,
 ) (scaleDownReplicant, error) {
 	var scaleDownPod *corev1.Pod
-	var scaleDownPodInfo *appsv2beta1.EMQXNode
+	var scaleDownNode *appsv2beta1.EMQXNode
 	status := &instance.Status
 
 	// Disallow scaling down the replicaSet if the instance just recently became ready.
@@ -99,13 +99,13 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 			return scaleDownReplicant{Reason: fmt.Sprintf("node %s evacuation in progress", evacuatingNode.Node)}, nil
 		}
 		for _, node := range status.ReplicantNodes {
-			if node.Node == evacuatingNode.Node {
-				scaleDownPodInfo = &node
+			if node.Node == evacuatingNode.Node && node.PodName != "" {
+				scaleDownNode = &node
 				scaleDownPod = r.state.podWithName(node.PodName)
 				break
 			}
 		}
-		if scaleDownPodInfo == nil {
+		if scaleDownNode == nil {
 			return scaleDownReplicant{Reason: fmt.Sprintf("evacuated node %s already deleted", evacuatingNode.Node)}, nil
 		}
 	} else {
@@ -113,15 +113,15 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 		scaleDownPod = currentPods[0]
 		for _, node := range status.ReplicantNodes {
 			if node.PodName == scaleDownPod.Name {
-				scaleDownPodInfo = &node
+				scaleDownNode = &node
 				break
 			}
 		}
-		if scaleDownPodInfo == nil {
+		if scaleDownNode == nil {
 			return scaleDownReplicant{}, emperror.Errorf("node is missing for pod %s", scaleDownPod.Name)
 		}
 		// If the pod is already stopped, return it.
-		if scaleDownPodInfo.NodeStatus == "stopped" {
+		if scaleDownNode.NodeStatus == "stopped" {
 			return scaleDownReplicant{Pod: scaleDownPod, Reason: "pod is already stopped"}, nil
 		}
 	}
@@ -134,8 +134,8 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	}
 
 	// If the pod has at least one session, start node evacuation.
-	if scaleDownPodInfo.Session > 0 {
-		nodeName := scaleDownPodInfo.Node
+	if scaleDownNode.Session > 0 {
+		nodeName := scaleDownNode.Node
 		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := migrationTargetNodes(r, instance)
 		if len(migrateTo) == 0 {
