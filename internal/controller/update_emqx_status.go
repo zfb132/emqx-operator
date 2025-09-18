@@ -125,7 +125,6 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 }
 
 func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2beta1.EMQX) {
-	spec := &instance.Spec
 	status := &instance.Status
 
 	hasReplicants := appsv2beta1.IsExistReplicant(instance)
@@ -165,7 +164,7 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 			updateRs := r.state.updateReplicantSet(instance)
 			if updateRs != nil &&
 				updateRs.Status.ReadyReplicas > 0 &&
-				updateRs.Status.ReadyReplicas == *spec.ReplicantTemplate.Spec.Replicas {
+				updateRs.Status.ReadyReplicas == status.ReplicantNodesStatus.UpdateReplicas {
 				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesReady)
 			}
 		} else {
@@ -180,13 +179,15 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 		}
 
 	case appsv2beta1.Available:
-		if status.CoreNodesStatus.ReadyReplicas != status.CoreNodesStatus.Replicas ||
+		if status.CoreNodesStatus.UpdateReplicas != status.CoreNodesStatus.Replicas ||
+			status.CoreNodesStatus.ReadyReplicas != status.CoreNodesStatus.Replicas ||
 			status.CoreNodesStatus.UpdateRevision != status.CoreNodesStatus.CurrentRevision {
 			break
 		}
 
 		if hasReplicants {
-			if status.ReplicantNodesStatus.ReadyReplicas != status.ReplicantNodesStatus.Replicas ||
+			if status.ReplicantNodesStatus.UpdateReplicas != status.ReplicantNodesStatus.Replicas ||
+				status.ReplicantNodesStatus.ReadyReplicas != status.ReplicantNodesStatus.Replicas ||
 				status.ReplicantNodesStatus.UpdateRevision != status.ReplicantNodesStatus.CurrentRevision {
 				break
 			}
