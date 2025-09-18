@@ -130,16 +130,14 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		&syncCoreSets{r},
 		&syncSets{r},
 	} {
+		round.log = logger.WithValues("reconciler", subReconcilerName(subReconciler))
 		subResult := subReconciler.reconcile(&round, instance)
 		if !subResult.result.IsZero() {
 			return subResult.result, nil
 		}
 		if subResult.err != nil {
 			if errors.IsCommonError(subResult.err) {
-				logger.Info(
-					"reconciler requeue",
-					"reconciler", subReconcilerName(subReconciler),
-					"reason", subResult.err)
+				round.log.Info("reconciler requeue", "reason", subResult.err)
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			r.EventRecorder.Eventf(instance, corev1.EventTypeWarning,

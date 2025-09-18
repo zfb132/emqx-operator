@@ -9,6 +9,7 @@ import (
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 )
 
 type updateStatus struct {
@@ -253,11 +254,13 @@ func switchCoreSet(
 		for _, coreSet := range r.state.coreSets {
 			// Adopt oldest non-empty coreSet if there are more than 2 (current and update) coreSets:
 			if coreSet.UID != update.UID && coreSet.Status.Replicas > 0 {
+				r.log.V(1).Info("adopting non-empty current coreSet", "statefulSet", klog.KObj(coreSet))
 				current = coreSet
 				break
 			}
 		}
 		if current == nil {
+			r.log.V(1).Info("switching update -> current coreSet", "statefulSet", klog.KObj(update))
 			current = update
 		}
 	}
@@ -278,11 +281,13 @@ func switchReplicantSet(
 		for _, replicantSet := range r.state.replicantSets {
 			// Adopt oldest non-empty replicantSet if there are more than 2 (current and update) replicantSets:
 			if replicantSet.UID != update.UID && replicantSet.Status.Replicas > 0 {
+				r.log.V(1).Info("adopting non-empty current replicantSet", "replicaSet", klog.KObj(replicantSet))
 				current = replicantSet
 				break
 			}
 		}
 		if current == nil {
+			r.log.V(1).Info("switching update -> current replicantSet", "replicaSet", klog.KObj(update))
 			current = update
 		}
 	}

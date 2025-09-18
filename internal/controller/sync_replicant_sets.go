@@ -9,6 +9,7 @@ import (
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 type syncReplicantSets struct {
@@ -43,6 +44,8 @@ func (s *syncReplicantSets) migrateSet(
 		return subResult{err: err}
 	}
 	if admission.Pod != nil {
+		r.log.V(1).Info("scaling down replicantSet", "pod", klog.KObj(admission.Pod), "replicaSet", klog.KObj(current))
+
 		if admission.Pod.Annotations == nil {
 			admission.Pod.Annotations = make(map[string]string)
 		}
@@ -58,6 +61,9 @@ func (s *syncReplicantSets) migrateSet(
 		if err := s.Client.Update(r.ctx, current); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to scale down current replicantSet")}
 		}
+	}
+	if admission.Reason != "" {
+		r.log.V(1).Info("scale down replicantSet skipped", "reason", admission.Reason, "replicaSet", klog.KObj(current))
 	}
 	return subResult{}
 }

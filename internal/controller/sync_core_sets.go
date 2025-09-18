@@ -9,6 +9,7 @@ import (
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 type syncCoreSets struct {
@@ -43,10 +44,15 @@ func (s *syncCoreSets) migrateSet(
 		return subResult{err: err}
 	}
 	if admission.Pod != nil {
+		r.log.V(1).Info("migrating coreSet", "pod", klog.KObj(admission.Pod), "statefulSet", klog.KObj(current))
+
 		*current.Spec.Replicas = *current.Spec.Replicas - 1
 		if err := s.Client.Update(r.ctx, current); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to scale down old statefulSet")}
 		}
+	}
+	if admission.Reason != "" {
+		r.log.V(1).Info("migrate coreSet skipped", "reason", admission.Reason, "statefulSet", klog.KObj(current))
 	}
 	return subResult{}
 }
@@ -61,6 +67,7 @@ func (s *syncCoreSets) scaleDownSet(
 	currentReplicas := *current.Spec.Replicas
 
 	if currentReplicas < desiredReplicas {
+		r.log.V(1).Info("scaling up coreSet", "statefulSet", klog.KObj(current), "desiredReplicas", desiredReplicas)
 		*current.Spec.Replicas = desiredReplicas
 		if err := s.Client.Update(r.ctx, current); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to scale up statefulSet")}
@@ -74,11 +81,15 @@ func (s *syncCoreSets) scaleDownSet(
 			return subResult{err: err}
 		}
 		if admission.Pod != nil {
+			r.log.V(1).Info("scaling down coreSet", "pod", klog.KObj(admission.Pod), "statefulSet", klog.KObj(current))
 			*current.Spec.Replicas = *current.Spec.Replicas - 1
 			if err := s.Client.Update(r.ctx, current); err != nil {
 				return subResult{err: emperror.Wrap(err, "failed to scale down statefulSet")}
 			}
 			return subResult{}
+		}
+		if admission.Reason != "" {
+			r.log.V(1).Info("scale down coreSet skipped", "reason", admission.Reason, "statefulSet", klog.KObj(current))
 		}
 	}
 
