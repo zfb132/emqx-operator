@@ -246,12 +246,23 @@ func switchCoreSet(
 	r *reconcileRound,
 	instance *appsv2beta1.EMQX,
 ) (*appsv1.StatefulSet, *appsv1.StatefulSet) {
-	status := &instance.Status
 	current := r.state.currentCoreSet(instance)
 	update := r.state.updateCoreSet(instance)
 	if (current == nil || current.Status.Replicas == 0) && update != nil {
-		status.CoreNodesStatus.CurrentRevision = status.CoreNodesStatus.UpdateRevision
-		return update, update
+		current = nil
+		for _, coreSet := range r.state.coreSets {
+			// Adopt oldest non-empty coreSet if there are more than 2 (current and update) coreSets:
+			if coreSet.UID != update.UID && coreSet.Status.Replicas > 0 {
+				current = coreSet
+				break
+			}
+		}
+		if current == nil {
+			current = update
+		}
+	}
+	if current != nil {
+		instance.Status.CoreNodesStatus.CurrentRevision = current.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 	}
 	return current, update
 }
@@ -260,12 +271,23 @@ func switchReplicantSet(
 	r *reconcileRound,
 	instance *appsv2beta1.EMQX,
 ) (*appsv1.ReplicaSet, *appsv1.ReplicaSet) {
-	status := &instance.Status
 	current := r.state.currentReplicantSet(instance)
 	update := r.state.updateReplicantSet(instance)
 	if (current == nil || current.Status.Replicas == 0) && update != nil {
-		status.ReplicantNodesStatus.CurrentRevision = status.ReplicantNodesStatus.UpdateRevision
-		return update, update
+		current = nil
+		for _, replicantSet := range r.state.replicantSets {
+			// Adopt oldest non-empty replicantSet if there are more than 2 (current and update) replicantSets:
+			if replicantSet.UID != update.UID && replicantSet.Status.Replicas > 0 {
+				current = replicantSet
+				break
+			}
+		}
+		if current == nil {
+			current = update
+		}
+	}
+	if current != nil {
+		instance.Status.ReplicantNodesStatus.CurrentRevision = current.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 	}
 	return current, update
 }
