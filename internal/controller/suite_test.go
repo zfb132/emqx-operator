@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
+	ginkgotypes "github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
 
@@ -77,8 +78,9 @@ var emqx *appsv2beta1.EMQX = &appsv2beta1.EMQX{
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
-
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Controller Suite", ginkgotypes.ReporterConfig{
+		Verbose: true,
+	})
 }
 
 var _ = BeforeSuite(func() {
