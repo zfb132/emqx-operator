@@ -49,10 +49,10 @@ type NodeEvacuationStatus struct {
 }
 
 type NodeEvacuationStats struct {
-	InitialSessions  *int32 `json:"initial_sessions,omitempty"`
-	InitialConnected *int32 `json:"initial_connected,omitempty"`
-	CurrentSessions  *int32 `json:"current_sessions,omitempty"`
-	CurrentConnected *int32 `json:"current_connected,omitempty"`
+	InitialSessions  int32 `json:"initial_sessions,omitempty"`
+	InitialConnected int32 `json:"initial_connected,omitempty"`
+	CurrentSessions  int32 `json:"current_sessions,omitempty"`
+	CurrentConnected int32 `json:"current_connected,omitempty"`
 }
 
 type EMQXNodesStatus struct {
