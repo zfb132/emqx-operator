@@ -71,10 +71,6 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	}
 
 	// Reflect the status of the DS replication in the resource status.
-	dsStatus := appsv2beta1.DSReplicationStatus{
-		DBs: []appsv2beta1.DSDBReplicationStatus{},
-	}
-
 	var dsReplicationStatus api.DSReplicationStatus
 	if r.api != nil {
 		var err error
@@ -83,7 +79,10 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 			return subResult{err: emperror.Wrap(err, "failed to get DS replication status")}
 		}
 	}
-	for _, db := range dsReplicationStatus.DBs {
+	if len(dsReplicationStatus.DBs) > 0 {
+		status.DSReplication.DBs = make([]appsv2beta1.DSDBReplicationStatus, len(dsReplicationStatus.DBs))
+	}
+	for i, db := range dsReplicationStatus.DBs {
 		minReplicas := 0
 		maxReplicas := 0
 		numTransitions := 0
@@ -104,7 +103,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 				}
 			}
 		}
-		dsStatus.DBs = append(dsStatus.DBs, appsv2beta1.DSDBReplicationStatus{
+		status.DSReplication.DBs[i] = appsv2beta1.DSDBReplicationStatus{
 			Name:              db.Name,
 			NumShards:         int32(len(db.Shards)),
 			NumShardReplicas:  int32(numShardReplicas),
@@ -112,9 +111,8 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 			NumTransitions:    int32(numTransitions),
 			MinReplicas:       int32(minReplicas),
 			MaxReplicas:       int32(maxReplicas),
-		})
+		}
 	}
-	status.DSReplication = dsStatus
 
 	// update status condition
 	u.updateStatusCondition(r, instance)
