@@ -7,7 +7,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	k8s "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -36,10 +35,13 @@ func (r *reconcileState) podsWithRole(role string) []*corev1.Pod {
 	return list
 }
 
-func (r *reconcileState) podsManagedBy(uid types.UID) []*corev1.Pod {
+func (r *reconcileState) podsManagedBy(object metav1.Object) []*corev1.Pod {
 	var list []*corev1.Pod
+	if object == nil {
+		return list
+	}
 	for _, pod := range r.pods {
-		if metav1.GetControllerOf(pod) != nil && metav1.GetControllerOf(pod).UID == uid {
+		if metav1.GetControllerOf(pod) != nil && metav1.GetControllerOf(pod).UID == object.GetUID() {
 			list = append(list, pod)
 		}
 	}

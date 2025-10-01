@@ -5,7 +5,6 @@ import (
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
-	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -15,12 +14,13 @@ type dsReflectPodCondition struct {
 }
 
 func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	// Instantiate API requester for a node that is part of update StatefulSet.
+	req := r.requester.forOldestCore(r.state, &managedByFilter{r.state.updateCoreSet(instance)})
+
 	// If there's no EMQX API to query, skip the reconciliation.
-	if r.api == nil {
+	if req == nil {
 		return subResult{}
 	}
-
-	req := u.getSuitableRequester(r, instance)
 
 	// If EMQX DS API is not available, skip this reconciliation step.
 	// We need this API to be available to ask it about replication status.
@@ -71,23 +71,4 @@ func (u *dsReflectPodCondition) findNode(instance *appsv2beta1.EMQX, pod *corev1
 		}
 	}
 	return nil
-}
-
-func (u *dsReflectPodCondition) getSuitableRequester(
-	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
-) req.RequesterInterface {
-	// Prefer node that is part of "update" StatefulSet (if any).
-	corePods := r.state.podsWithRole("core")
-	sortByCreationTimestamp(corePods)
-	for _, pod := range corePods {
-		if r.state.partOfUpdateSet(pod, instance) {
-			ready := util.FindPodCondition(pod, corev1.ContainersReady)
-			if ready != nil && ready.Status == corev1.ConditionTrue {
-				return r.api.SwitchHost(pod.Status.PodIP, pod.Name)
-			}
-		}
-	}
-	// If no suitable pod found, return the original requester.
-	return r.api
 }

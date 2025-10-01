@@ -83,7 +83,7 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	}
 
 	// Nothing to do if the replicaSet has no pods.
-	currentPods := r.state.podsManagedBy(current.UID)
+	currentPods := r.state.podsManagedBy(current)
 	sortByName(currentPods)
 	if len(currentPods) == 0 {
 		return scaleDownReplicant{Reason: "no more pods"}, nil
@@ -147,7 +147,7 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 		if len(migrateTo) == 0 {
 			return scaleDownReplicant{Reason: fmt.Sprintf("no nodes to migrate %s to", nodeName)}, nil
 		}
-		err := api.StartEvacuation(r.api, strategy, migrateTo, nodeName)
+		err := api.StartEvacuation(r.oldestCoreRequester(), strategy, migrateTo, nodeName)
 		if err != nil {
 			return scaleDownReplicant{}, emperror.Wrap(err, "failed to start node evacuation")
 		}

@@ -31,12 +31,12 @@ import (
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	req "github.com/emqx/emqx-operator/internal/requester"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/emqx/emqx-operator/internal/errors"
 	"github.com/emqx/emqx-operator/internal/handler"
-	req "github.com/emqx/emqx-operator/internal/requester"
 )
 
 // Currently executing round of reconciliation
@@ -46,9 +46,14 @@ type reconcileRound struct {
 	// Populated by `loadConfig` reconciler:
 	conf *config.Conf
 	// Populated by `setupAPIRequester` reconciler:
-	api req.RequesterInterface
+	requester apiRequester
 	// Populated by loadState reconciler:
 	state *reconcileState
+}
+
+// Instantiate default API requester for a core node.
+func (r *reconcileRound) oldestCoreRequester() req.RequesterInterface {
+	return r.requester.forOldestCore(r.state)
 }
 
 // subResult provides a wrapper around different results from a subreconciler.

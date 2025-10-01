@@ -43,12 +43,15 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		status.ReplicantNodesStatus.UpdateReplicas = updateReplicantSet.Status.Replicas
 	}
 
+	req := r.oldestCoreRequester()
+
 	// check emqx node status
-	if r.api != nil {
-		err := u.getEMQXNodes(r, instance)
+	if req != nil {
+		nodes, err := api.Nodes(req)
 		if err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to get node status")}
 		}
+		u.updateEMQXNodesStatus(r, instance, nodes)
 	}
 	for _, node := range status.CoreNodes {
 		if node.NodeStatus == "running" {
@@ -61,8 +64,8 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		}
 	}
 
-	if r.api != nil {
-		nodeEvacuationsStatus, err := api.NodeEvacuationStatus(r.api)
+	if req != nil {
+		nodeEvacuationsStatus, err := api.NodeEvacuationStatus(req)
 		if err == nil {
 			status.NodeEvacuationsStatus = nodeEvacuationsStatus
 		} else {
@@ -72,9 +75,9 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 
 	// Reflect the status of the DS replication in the resource status.
 	var dsReplicationStatus api.DSReplicationStatus
-	if r.api != nil {
+	if req != nil {
 		var err error
-		dsReplicationStatus, err = api.GetDSReplicationStatus(r.api)
+		dsReplicationStatus, err = api.GetDSReplicationStatus(req)
 		if err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to get DS replication status")}
 		}
@@ -295,16 +298,11 @@ func switchReplicantSet(
 	return current, update
 }
 
-func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQX) error {
-	emqxNodes, err := api.Nodes(r.api)
-	if err != nil {
-		return err
-	}
-
+func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *appsv2beta1.EMQX, nodes []appsv2beta1.EMQXNode) {
 	status := &instance.Status
 	status.CoreNodes = []appsv2beta1.EMQXNode{}
 	status.ReplicantNodes = []appsv2beta1.EMQXNode{}
-	for _, node := range emqxNodes {
+	for _, node := range nodes {
 		list := &status.CoreNodes
 		host := extractHostname(node.Node)
 		if node.Role == "replicant" {
@@ -322,15 +320,12 @@ func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQ
 		}
 		*list = append(*list, node)
 	}
-
 	sort.Slice(status.CoreNodes, func(i, j int) bool {
 		return status.CoreNodes[i].Uptime < status.CoreNodes[j].Uptime
 	})
 	sort.Slice(status.ReplicantNodes, func(i, j int) bool {
 		return status.ReplicantNodes[i].Uptime < status.ReplicantNodes[j].Uptime
 	})
-
-	return nil
 }
 
 func extractHostname(node string) string {

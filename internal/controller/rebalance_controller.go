@@ -114,10 +114,20 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, emperror.New("failed to parse config")
 	}
 
-	state := loadReconcileState(ctx, r.Client, emqx)
-	req, err = apiRequester(ctx, r.Client, conf, state, emqx)
+	bootstrapAPIKey, err := getBootstrapAPIKey(ctx, r.Client, emqx)
 	if err != nil {
-		return ctrl.Result{}, emperror.New("failed to get create emqx http API")
+		return ctrl.Result{}, emperror.Wrap(err, "failed to get bootstrap API key")
+	}
+
+	requester, err := newAPIRequesterBuilder(conf, bootstrapAPIKey)
+	if err != nil {
+		return ctrl.Result{}, emperror.Wrap(err, "failed to create EMQX API requester")
+	}
+
+	state := loadReconcileState(ctx, r.Client, emqx)
+	req = requester.forOldestCore(state)
+	if req == nil {
+		return ctrl.Result{}, emperror.New("EMQX API requester unavailable")
 	}
 
 	if !rebalance.DeletionTimestamp.IsZero() {

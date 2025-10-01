@@ -120,7 +120,7 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	}
 
 	// List the pods managed by the current coreSet.
-	pods := r.state.podsManagedBy(current.UID)
+	pods := r.state.podsManagedBy(current)
 	sortByName(pods)
 
 	// No more pods, no need to scale down.
@@ -171,7 +171,7 @@ func (s *syncCoreSets) chooseScaleDownCore(
 		if len(migrateTo) == 0 {
 			return scaleDownCore{Reason: fmt.Sprintf("no nodes to migrate %s to", scaleDownNode.Node)}, nil
 		}
-		err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNode.Node)
+		err := api.StartEvacuation(r.oldestCoreRequester(), strategy, migrateTo, scaleDownNode.Node)
 		if err != nil {
 			return scaleDownCore{}, emperror.Wrap(err, "failed to start node evacuation")
 		}

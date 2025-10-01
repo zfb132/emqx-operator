@@ -16,19 +16,17 @@ type dsUpdateReplicaSets struct {
 }
 
 func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	// If there's no EMQX API to query, skip the reconciliation.
-	if r.api == nil {
-		return subResult{}
-	}
-
-	// If EMQX DS is not enabled, skip this reconciliation step.
-	if !r.conf.IsDSEnabled() {
-		return subResult{}
-	}
-
 	// Get the most recent stateful set.
 	updateCoreSet := r.state.updateCoreSet(instance)
 	if updateCoreSet == nil {
+		return subResult{}
+	}
+
+	// Instantiate API requester for a node that is part of update StatefulSet.
+	req := r.requester.forOldestCore(r.state, &managedByFilter{r.state.updateCoreSet(instance)})
+
+	// If there's no EMQX API to query, skip the reconciliation.
+	if req == nil {
 		return subResult{}
 	}
 
@@ -40,7 +38,7 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 
 	// Fetch the DS cluster info.
 	// If EMQX DS API is not available, skip this reconciliation step.
-	cluster, err := api.GetDSCluster(r.api)
+	cluster, err := api.GetDSCluster(req)
 	if err != nil && emperror.Is(err, api.ErrorNotFound) {
 		return subResult{}
 	}
@@ -49,7 +47,7 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	}
 
 	// Fetch the DS replication status.
-	replication, err := api.GetDSReplicationStatus(r.api)
+	replication, err := api.GetDSReplicationStatus(req)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to fetch DS replication status")}
 	}
@@ -85,7 +83,7 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 		r.log.V(1).Info("updating DS replica sets", "targetSites", targetSites, "currentSites", currentSites)
 	}
 	for _, db := range replication.DBs {
-		err := api.UpdateDSReplicaSet(r.api, db.Name, targetSites)
+		err := api.UpdateDSReplicaSet(req, db.Name, targetSites)
 		if err != nil {
 			return subResult{err: emperror.Wrapf(err, "failed to update DB %s replica set", db.Name)}
 		}

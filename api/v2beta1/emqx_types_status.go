@@ -89,6 +89,34 @@ type EMQXNode struct {
 	Uptime int64 `json:"-"`
 }
 
+func (s EMQXStatus) FindNode(node string) *EMQXNode {
+	for _, n := range s.CoreNodes {
+		if n.Node == node {
+			return &n
+		}
+	}
+	for _, n := range s.ReplicantNodes {
+		if n.Node == node {
+			return &n
+		}
+	}
+	return nil
+}
+
+func (s EMQXStatus) FindNodeByPodName(pod string) *EMQXNode {
+	for _, n := range s.CoreNodes {
+		if n.PodName == pod {
+			return &n
+		}
+	}
+	for _, n := range s.ReplicantNodes {
+		if n.PodName == pod {
+			return &n
+		}
+	}
+	return nil
+}
+
 // Summary of DS replication status per database.
 type DSReplicationStatus struct {
 	DBs []DSDBReplicationStatus `json:"dbs,omitempty"`

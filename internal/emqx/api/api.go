@@ -53,6 +53,9 @@ func post(req req.RequesterInterface, path string, body []byte) ([]byte, error) 
 }
 
 func request(req req.RequesterInterface, method string, path string, body []byte, header http.Header) ([]byte, error) {
+	if req == nil {
+		return nil, emperror.New("no requester")
+	}
 	url := req.GetURL(path)
 	resp, body, err := req.Request(method, url, body, header)
 	if err != nil {

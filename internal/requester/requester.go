@@ -3,7 +3,6 @@ package requester
 import (
 	"bytes"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -23,7 +22,6 @@ type RequesterInterface interface {
 	GetPassword() string
 	GetDescription() string
 	Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error)
-	SwitchHost(host string, description string) RequesterInterface
 }
 
 type Requester struct {
@@ -55,18 +53,6 @@ func (requester *Requester) GetSchema() string {
 
 func (requester *Requester) GetDescription() string {
 	return requester.Description
-}
-
-func (r *Requester) SwitchHost(host string, description string) RequesterInterface {
-	_, port, _ := net.SplitHostPort(r.GetHost())
-	requester := &Requester{
-		Schema:      r.GetSchema(),
-		Host:        net.JoinHostPort(host, port),
-		Username:    r.GetUsername(),
-		Password:    r.GetPassword(),
-		Description: description,
-	}
-	return requester
 }
 
 func (requester *Requester) GetURL(path string, query ...string) url.URL {
@@ -153,10 +139,6 @@ func (f *MockRequester) GetHost() string                             { return ""
 func (f *MockRequester) GetUsername() string                         { return "" }
 func (f *MockRequester) GetPassword() string                         { return "" }
 func (f *MockRequester) GetDescription() string                      { return "MockRequester" }
-
-func (f *MockRequester) SwitchHost(host string, description string) RequesterInterface {
-	return f
-}
 
 func (f *MockRequester) Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
 	return f.mockFunc(method, url, body, header)
