@@ -61,7 +61,7 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	targetSites := []string{}
 	for _, node := range instance.Status.CoreNodes {
 		pod := r.state.podWithName(node.PodName)
-		if r.state.partOfUpdateSet(pod, instance) {
+		if pod != nil && r.state.partOfUpdateSet(pod, instance) {
 			site := cluster.FindSite(node.Node)
 			if site == nil {
 				return subResult{err: emperror.Wrapf(err, "no site for node %s", node.Node)}
@@ -81,6 +81,9 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	}
 
 	// Update replica sets for each DB.
+	if len(replication.DBs) > 0 {
+		r.log.V(1).Info("updating DS replica sets", "targetSites", targetSites, "currentSites", currentSites)
+	}
 	for _, db := range replication.DBs {
 		err := api.UpdateDSReplicaSet(r.api, db.Name, targetSites)
 		if err != nil {
