@@ -9,5 +9,5 @@ spec:
       license { key = "evaluation" }
   updateStrategy:
     evacuationStrategy:
-      waitTakeover: 1
-      waitHealthCheck: 15 # seconds
+      waitTakeover: 5 # seconds
+      waitHealthCheck: 10 # seconds

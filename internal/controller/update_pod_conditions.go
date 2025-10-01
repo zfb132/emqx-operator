@@ -1,144 +1,50 @@
 package controller
 
 import (
-	"context"
-	"net"
-	"strconv"
-
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
+	util "github.com/emqx/emqx-operator/internal/controller/util"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type updatePodConditions struct {
 	*EMQXReconciler
 }
 
-func (u *updatePodConditions) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, r innerReq.RequesterInterface) subResult {
-	var updateStsUID, currentStsUID, updateRsUID, currentRsUID types.UID
-	updateRs, currentRs, _ := getReplicaSetList(ctx, u.Client, instance)
-	if updateRs != nil {
-		updateRsUID = updateRs.UID
-	}
-	if currentRs != nil {
-		currentRsUID = currentRs.UID
-	}
-	updateSts, currentSts, _ := getStateFulSetList(ctx, u.Client, instance)
-	if updateSts != nil {
-		updateStsUID = updateSts.UID
-	}
-	if currentSts != nil {
-		currentStsUID = currentSts.UID
-	}
-
-	pods := &corev1.PodList{}
-	_ = u.Client.List(ctx, pods,
-		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(appsv2beta1.DefaultLabels(instance)),
-	)
-
-	for _, p := range pods.Items {
-		pod := p.DeepCopy()
-		controllerRef := metav1.GetControllerOf(pod)
-		if controllerRef == nil || pod.DeletionTimestamp != nil {
-			continue
-		}
-
-		onServingCondition := corev1.PodCondition{
-			Type: appsv2beta1.PodOnServing,
-		}
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == appsv2beta1.PodOnServing {
-				onServingCondition.Status = condition.Status
-				onServingCondition.LastTransitionTime = condition.LastTransitionTime
+func (u *updatePodConditions) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	for _, pod := range r.state.pods {
+		onServingCondition := util.FindPodCondition(pod, appsv2beta1.PodOnServing)
+		if onServingCondition == nil {
+			onServingCondition = &corev1.PodCondition{
+				Type:   appsv2beta1.PodOnServing,
+				Status: corev1.ConditionUnknown,
 			}
 		}
 
-		switch controllerRef.UID {
-		case updateStsUID, updateRsUID:
-			for _, condition := range pod.Status.Conditions {
-				if condition.Type == corev1.ContainersReady && condition.Status == corev1.ConditionTrue {
-					status := u.checkInCluster(instance, r, pod)
-					if status != onServingCondition.Status {
-						onServingCondition.Status = status
-						onServingCondition.LastTransitionTime = metav1.Now()
-					}
-					break
-				}
+		if r.state.partOfUpdateSet(pod, instance) {
+			cond := util.FindPodCondition(pod, corev1.ContainersReady)
+			if cond != nil && cond.Status == corev1.ConditionTrue {
+				req := r.api.SwitchHost(pod.Status.PodIP, pod.Name)
+				status := api.AvailabilityCheck(req)
+				util.SwitchPodConditionStatus(onServingCondition, status)
 			}
-		case currentStsUID, currentRsUID:
-			// When available condition is true, need clean currentSts / currentRs pod
-			if instance.Status.IsConditionTrue(appsv2beta1.Available) {
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.ContainersReady && condition.Status == corev1.ConditionTrue {
-						status := corev1.ConditionFalse
-						if status != onServingCondition.Status {
-							onServingCondition.Status = status
-							onServingCondition.LastTransitionTime = metav1.Now()
-						}
-						break
+		} else {
+			if r.state.partOfCurrentSet(pod, instance) {
+				// When available condition is true, need clean currentSts / currentRs pod
+				if instance.Status.IsConditionTrue(appsv2beta1.Available) {
+					cond := util.FindPodCondition(pod, corev1.ContainersReady)
+					if cond != nil && cond.Status == corev1.ConditionTrue {
+						util.SwitchPodConditionStatus(onServingCondition, corev1.ConditionFalse)
 					}
 				}
 			}
 		}
 
-		err := updatePodCondition(ctx, u.Client, pod, onServingCondition)
+		err := util.UpdatePodCondition(r.ctx, u.Client, pod, *onServingCondition)
 		if err != nil {
 			return subResult{err: emperror.Wrapf(err, "failed to update pod %s status", pod.Name)}
 		}
 	}
 	return subResult{}
-}
-
-func (u *updatePodConditions) checkInCluster(instance *appsv2beta1.EMQX, r innerReq.RequesterInterface, pod *corev1.Pod) corev1.ConditionStatus {
-	nodes := instance.Status.CoreNodes
-	if appsv2beta1.IsExistReplicant(instance) {
-		nodes = append(nodes, instance.Status.ReplicantNodes...)
-	}
-	for _, node := range nodes {
-		if pod.UID == node.PodUID {
-			return u.checkRebalanceStatus(r, pod)
-		}
-	}
-	return corev1.ConditionFalse
-}
-
-func (u *updatePodConditions) checkRebalanceStatus(r innerReq.RequesterInterface, pod *corev1.Pod) corev1.ConditionStatus {
-	if r == nil {
-		return corev1.ConditionFalse
-	}
-
-	portMap := u.conf.GetDashboardPortMap()
-
-	var schema, port string
-	if dashboardHttps, ok := portMap["dashboard-https"]; ok {
-		schema = "https"
-		port = strconv.FormatInt(int64(dashboardHttps), 10)
-	}
-	if dashboard, ok := portMap["dashboard"]; ok {
-		schema = "http"
-		port = strconv.FormatInt(int64(dashboard), 10)
-	}
-
-	requester := &innerReq.Requester{
-		Schema:   schema,
-		Host:     net.JoinHostPort(pod.Status.PodIP, port),
-		Username: r.GetUsername(),
-		Password: r.GetPassword(),
-	}
-
-	url := requester.GetURL("api/v5/load_rebalance/availability_check")
-	resp, _, err := requester.Request("GET", url, nil, nil)
-	if err != nil {
-		return corev1.ConditionUnknown
-	}
-	if resp.StatusCode != 200 {
-		return corev1.ConditionFalse
-	}
-	return corev1.ConditionTrue
 }

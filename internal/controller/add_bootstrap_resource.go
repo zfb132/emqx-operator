@@ -7,14 +7,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
 	"github.com/sethvargo/go-password/password"
 )
 
@@ -22,20 +19,20 @@ type addBootstrap struct {
 	*EMQXReconciler
 }
 
-func (a *addBootstrap) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, _ innerReq.RequesterInterface) subResult {
-	bootstrapAPIKeys, err := a.getAPIKeyString(ctx, instance)
+func (a *addBootstrap) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	bootstrapAPIKeys, err := a.getAPIKeyString(r.ctx, instance)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to get bootstrap api keys")}
 	}
 
 	for _, resource := range []client.Object{
-		generateNodeCookieSecret(instance, a.conf),
+		generateNodeCookieSecret(instance, r.conf),
 		generateBootstrapAPIKeySecret(instance, bootstrapAPIKeys),
 	} {
 		if err := ctrl.SetControllerReference(instance, resource, a.Scheme); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to set controller reference")}
 		}
-		if err := a.Create(ctx, resource); err != nil {
+		if err := a.Create(r.ctx, resource); err != nil {
 			if !k8sErrors.IsAlreadyExists(err) {
 				return subResult{err: emperror.Wrap(err, "failed to create bootstrap configMap")}
 			}
@@ -50,12 +47,12 @@ func (a *addBootstrap) getAPIKeyString(ctx context.Context, instance *appsv2beta
 
 	for _, apiKey := range instance.Spec.BootstrapAPIKeys {
 		if apiKey.SecretRef != nil {
-			keyValue, err := a.readSecret(ctx, instance.Namespace, apiKey.SecretRef.Key.SecretName, apiKey.SecretRef.Key.SecretKey)
+			keyValue, err := a.readSecret(ctx, instance, apiKey.SecretRef.Key.SecretName, apiKey.SecretRef.Key.SecretKey)
 			if err != nil {
 				a.EventRecorder.Event(instance, corev1.EventTypeWarning, "GetBootStrapSecretRef", err.Error())
 				return "", err
 			}
-			secretValue, err := a.readSecret(ctx, instance.Namespace, apiKey.SecretRef.Secret.SecretName, apiKey.SecretRef.Secret.SecretKey)
+			secretValue, err := a.readSecret(ctx, instance, apiKey.SecretRef.Secret.SecretName, apiKey.SecretRef.Secret.SecretKey)
 			if err != nil {
 				a.EventRecorder.Event(instance, corev1.EventTypeWarning, "GetBootStrapSecretRef", err.Error())
 				return "", err
@@ -69,12 +66,9 @@ func (a *addBootstrap) getAPIKeyString(ctx context.Context, instance *appsv2beta
 	return bootstrapAPIKeys, nil
 }
 
-func (a *addBootstrap) readSecret(ctx context.Context, namespace string, name string, key string) (string, error) {
+func (a *addBootstrap) readSecret(ctx context.Context, instance *appsv2beta1.EMQX, name string, key string) (string, error) {
 	secret := &corev1.Secret{}
-	if err := a.Client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      name,
-	}, secret); err != nil {
+	if err := a.Client.Get(ctx, instance.NamespacedName(name), secret); err != nil {
 		return "", emperror.Wrap(err, "failed to get secret")
 	}
 

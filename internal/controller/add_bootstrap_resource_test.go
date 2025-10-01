@@ -219,9 +219,13 @@ func TestReadSecret(t *testing.T) {
 	}
 
 	// Create a context
-	ctx := ctx
-
-	val, err := a.readSecret(ctx, "default", "test-secret", "key")
+	instance := &appsv2beta1.EMQX{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "emqx",
+			Namespace: "default",
+		},
+	}
+	val, err := a.readSecret(ctx, instance, "test-secret", "key")
 	if err != nil {
 		t.Fatal(err)
 	}

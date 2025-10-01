@@ -21,15 +21,17 @@ type RequesterInterface interface {
 	GetHost() string
 	GetUsername() string
 	GetPassword() string
+	GetDescription() string
 	Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error)
-	SwitchHost(host string) RequesterInterface
+	SwitchHost(host string, description string) RequesterInterface
 }
 
 type Requester struct {
-	Schema   string
-	Host     string
-	Username string
-	Password string
+	Schema      string
+	Host        string
+	Username    string
+	Password    string
+	Description string
 }
 
 func (requester *Requester) GetUsername() string {
@@ -51,13 +53,18 @@ func (requester *Requester) GetSchema() string {
 	return requester.Schema
 }
 
-func (r *Requester) SwitchHost(host string) RequesterInterface {
+func (requester *Requester) GetDescription() string {
+	return requester.Description
+}
+
+func (r *Requester) SwitchHost(host string, description string) RequesterInterface {
 	_, port, _ := net.SplitHostPort(r.GetHost())
 	requester := &Requester{
-		Schema:   r.GetSchema(),
-		Host:     net.JoinHostPort(host, port),
-		Username: r.GetUsername(),
-		Password: r.GetPassword(),
+		Schema:      r.GetSchema(),
+		Host:        net.JoinHostPort(host, port),
+		Username:    r.GetUsername(),
+		Password:    r.GetPassword(),
+		Description: description,
 	}
 	return requester
 }
@@ -97,7 +104,7 @@ func (requester *Requester) Request(method string, url url.URL, body []byte, hea
 
 	req, err := http.NewRequest(method, url.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, emperror.Wrap(err, "failed to create request")
+		return nil, nil, err
 	}
 
 	for k, v := range header {
@@ -115,31 +122,42 @@ func (requester *Requester) Request(method string, url url.URL, body []byte, hea
 
 	resp, err = httpClient.Do(req)
 	if err != nil {
-		return nil, nil, emperror.Wrap(err, "failed to request API")
+		return nil, nil, emperror.Wrap(err, "request failed")
 	}
 
-	// defer resp.Body.Close()
 	defer func() {
 		_ = resp.Body.Close()
 	}()
+
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return resp, nil, emperror.Wrap(err, "failed to read response body")
+		return resp, nil, emperror.Wrap(err, "response body unreadable")
 	}
 	return resp, body, nil
 }
 
 // Mock
-type FakeRequester struct {
-	ReqFunc func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error)
+type MockRequesterFunc func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error)
+
+type MockRequester struct {
+	mockFunc MockRequesterFunc
 }
 
-func (f *FakeRequester) GetURL(path string, query ...string) url.URL { return url.URL{Path: path} }
-func (f *FakeRequester) GetSchema() string                           { return "http" }
-func (f *FakeRequester) GetHost() string                             { return "" }
-func (f *FakeRequester) GetUsername() string                         { return "" }
-func (f *FakeRequester) GetPassword() string                         { return "" }
-func (f *FakeRequester) SwitchHost(host string) RequesterInterface   { return f }
-func (f *FakeRequester) Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-	return f.ReqFunc(method, url, body, header)
+func NewMockRequester(mockFunc MockRequesterFunc) *MockRequester {
+	return &MockRequester{mockFunc: mockFunc}
+}
+
+func (f *MockRequester) GetURL(path string, query ...string) url.URL { return url.URL{Path: path} }
+func (f *MockRequester) GetSchema() string                           { return "http" }
+func (f *MockRequester) GetHost() string                             { return "" }
+func (f *MockRequester) GetUsername() string                         { return "" }
+func (f *MockRequester) GetPassword() string                         { return "" }
+func (f *MockRequester) GetDescription() string                      { return "MockRequester" }
+
+func (f *MockRequester) SwitchHost(host string, description string) RequesterInterface {
+	return f
+}
+
+func (f *MockRequester) Request(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+	return f.mockFunc(method, url, body, header)
 }

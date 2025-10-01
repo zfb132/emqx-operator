@@ -1,261 +1,342 @@
 package controller
 
 import (
-	"context"
-	"encoding/json"
 	"sort"
 	"strings"
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	"github.com/emqx/emqx-operator/internal/controller/ds"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/go-logr/logr"
-	"github.com/tidwall/gjson"
-	corev1 "k8s.io/api/core/v1"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/klog/v2"
 )
 
 type updateStatus struct {
 	*EMQXReconciler
 }
 
-func (u *updateStatus) reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, r innerReq.RequesterInterface) subResult {
-	instance.Status.CoreNodesStatus.Replicas = *instance.Spec.CoreTemplate.Spec.Replicas
+func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	status := &instance.Status
+
+	status.CoreNodesStatus.Replicas = *instance.Spec.CoreTemplate.Spec.Replicas
 	if instance.Spec.ReplicantTemplate != nil {
-		instance.Status.ReplicantNodesStatus.Replicas = *instance.Spec.ReplicantTemplate.Spec.Replicas
+		status.ReplicantNodesStatus.Replicas = *instance.Spec.ReplicantTemplate.Spec.Replicas
 	}
 
-	if instance.Status.CoreNodesStatus.UpdateRevision != "" && instance.Status.CoreNodesStatus.CurrentRevision == "" {
-		instance.Status.CoreNodesStatus.CurrentRevision = instance.Status.CoreNodesStatus.UpdateRevision
+	currentCoreSet, updateCoreSet := switchCoreSet(r, instance)
+	currentReplicantSet, updateReplicantSet := switchReplicantSet(r, instance)
+
+	status.CoreNodesStatus.ReadyReplicas = 0
+	if currentCoreSet != nil {
+		status.CoreNodesStatus.CurrentReplicas = currentCoreSet.Status.Replicas
 	}
-	if instance.Status.ReplicantNodesStatus.UpdateRevision != "" && instance.Status.ReplicantNodesStatus.CurrentRevision == "" {
-		instance.Status.ReplicantNodesStatus.CurrentRevision = instance.Status.ReplicantNodesStatus.UpdateRevision
+	if updateCoreSet != nil {
+		status.CoreNodesStatus.UpdateReplicas = updateCoreSet.Status.Replicas
 	}
 
-	updateSts, currentSts, oldStsList := getStateFulSetList(ctx, u.Client, instance)
-	if updateSts != nil {
-		if currentSts == nil || (updateSts.UID != currentSts.UID && currentSts.Status.Replicas == 0) {
-			var i int
-			for i = 0; i < len(oldStsList); i++ {
-				if oldStsList[i].Status.Replicas > 0 {
-					currentSts = oldStsList[i]
-					break
-				}
-			}
-			if i == len(oldStsList) {
-				currentSts = updateSts
-			}
-			instance.Status.CoreNodesStatus.CurrentRevision = currentSts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
-			if err := u.Client.Status().Update(ctx, instance); err != nil {
-				return subResult{err: emperror.Wrap(err, "failed to update status")}
-			}
-			return subResult{}
-		}
+	status.ReplicantNodesStatus.ReadyReplicas = 0
+	if currentReplicantSet != nil {
+		status.ReplicantNodesStatus.CurrentReplicas = currentReplicantSet.Status.Replicas
 	}
-
-	updateRs, currentRs, oldRsList := getReplicaSetList(ctx, u.Client, instance)
-	if updateRs != nil {
-		if currentRs == nil || (updateRs.UID != currentRs.UID && currentRs.Status.Replicas == 0) {
-			var i int
-			for i = 0; i < len(oldRsList); i++ {
-				if oldRsList[i].Status.Replicas > 0 {
-					currentRs = oldRsList[i]
-					break
-				}
-			}
-			if i == len(oldRsList) {
-				currentRs = updateRs
-			}
-			instance.Status.ReplicantNodesStatus.CurrentRevision = currentRs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
-			if err := u.Client.Status().Update(ctx, instance); err != nil {
-				return subResult{err: emperror.Wrap(err, "failed to update status")}
-			}
-			return subResult{}
-		}
-	}
-
-	if r == nil {
-		return subResult{}
+	if updateReplicantSet != nil {
+		status.ReplicantNodesStatus.UpdateReplicas = updateReplicantSet.Status.Replicas
 	}
 
 	// check emqx node status
-	coreNodes, replNodes, err := u.getEMQXNodes(ctx, instance, r)
-	if err != nil {
-		u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetNodeStatuses", err.Error())
+	if r.api != nil {
+		err := u.getEMQXNodes(r, instance)
+		if err != nil {
+			return subResult{err: emperror.Wrap(err, "failed to get node status")}
+		}
 	}
-
-	instance.Status.CoreNodes = coreNodes
-	instance.Status.CoreNodesStatus.ReadyReplicas = 0
-	instance.Status.CoreNodesStatus.CurrentReplicas = 0
-	instance.Status.CoreNodesStatus.UpdateReplicas = 0
-	for _, node := range coreNodes {
+	for _, node := range status.CoreNodes {
 		if node.NodeStatus == "running" {
-			instance.Status.CoreNodesStatus.ReadyReplicas++
-		}
-		if currentSts != nil && node.ControllerUID == currentSts.UID {
-			instance.Status.CoreNodesStatus.CurrentReplicas++
-		}
-		if updateSts != nil && node.ControllerUID == updateSts.UID {
-			instance.Status.CoreNodesStatus.UpdateReplicas++
+			status.CoreNodesStatus.ReadyReplicas++
 		}
 	}
-
-	instance.Status.ReplicantNodes = replNodes
-	instance.Status.ReplicantNodesStatus.ReadyReplicas = 0
-	instance.Status.ReplicantNodesStatus.CurrentReplicas = 0
-	instance.Status.ReplicantNodesStatus.UpdateReplicas = 0
-	for _, node := range replNodes {
+	for _, node := range status.ReplicantNodes {
 		if node.NodeStatus == "running" {
-			instance.Status.ReplicantNodesStatus.ReadyReplicas++
-		}
-		if currentRs != nil && node.ControllerUID == currentRs.UID {
-			instance.Status.ReplicantNodesStatus.CurrentReplicas++
-		}
-		if updateRs != nil && node.ControllerUID == updateRs.UID {
-			instance.Status.ReplicantNodesStatus.UpdateReplicas++
+			status.ReplicantNodesStatus.ReadyReplicas++
 		}
 	}
 
-	nodeEvacuationsStatus, err := getNodeEvacuationStatusByAPI(r)
-	if err != nil {
-		u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetNodeEvacuationStatuses", err.Error())
+	if r.api != nil {
+		nodeEvacuationsStatus, err := api.NodeEvacuationStatus(r.api)
+		if err == nil {
+			status.NodeEvacuationsStatus = nodeEvacuationsStatus
+		} else {
+			return subResult{err: emperror.Wrap(err, "failed to get node evacuation status")}
+		}
 	}
-	instance.Status.NodeEvacuationsStatus = nodeEvacuationsStatus
 
 	// Reflect the status of the DS replication in the resource status.
-	status := appsv2beta1.DSReplicationStatus{
+	dsStatus := appsv2beta1.DSReplicationStatus{
 		DBs: []appsv2beta1.DSDBReplicationStatus{},
 	}
 
-	dsReplicationStatus, err := ds.GetReplicationStatus(r)
-	if err != nil {
-		u.EventRecorder.Event(instance, corev1.EventTypeWarning, "FailedToGetDSReplicationStatus", err.Error())
-	} else {
-		for _, db := range dsReplicationStatus.DBs {
-			minReplicas := 0
-			maxReplicas := 0
-			numTransitions := 0
-			numShardReplicas := 0
-			lostShardReplicas := 0
-			if len(db.Shards) > 0 {
-				minReplicas = len(db.Shards[0].Replicas)
-				maxReplicas = len(db.Shards[0].Replicas)
-			}
-			for _, shard := range db.Shards {
-				minReplicas = min(minReplicas, len(shard.Replicas))
-				maxReplicas = max(maxReplicas, len(shard.Replicas))
-				numTransitions += len(shard.Transitions)
-				numShardReplicas += len(shard.Replicas)
-				for _, replica := range shard.Replicas {
-					if replica.Status == "lost" {
-						lostShardReplicas += 1
-					}
+	var dsReplicationStatus api.DSReplicationStatus
+	if r.api != nil {
+		var err error
+		dsReplicationStatus, err = api.GetDSReplicationStatus(r.api)
+		if err != nil {
+			return subResult{err: emperror.Wrap(err, "failed to get DS replication status")}
+		}
+	}
+	for _, db := range dsReplicationStatus.DBs {
+		minReplicas := 0
+		maxReplicas := 0
+		numTransitions := 0
+		numShardReplicas := 0
+		lostShardReplicas := 0
+		if len(db.Shards) > 0 {
+			minReplicas = len(db.Shards[0].Replicas)
+			maxReplicas = len(db.Shards[0].Replicas)
+		}
+		for _, shard := range db.Shards {
+			minReplicas = min(minReplicas, len(shard.Replicas))
+			maxReplicas = max(maxReplicas, len(shard.Replicas))
+			numTransitions += len(shard.Transitions)
+			numShardReplicas += len(shard.Replicas)
+			for _, replica := range shard.Replicas {
+				if replica.Status == "lost" {
+					lostShardReplicas += 1
 				}
 			}
-			status.DBs = append(status.DBs, appsv2beta1.DSDBReplicationStatus{
-				Name:              db.Name,
-				NumShards:         int32(len(db.Shards)),
-				NumShardReplicas:  int32(numShardReplicas),
-				LostShardReplicas: int32(lostShardReplicas),
-				NumTransitions:    int32(numTransitions),
-				MinReplicas:       int32(minReplicas),
-				MaxReplicas:       int32(maxReplicas),
-			})
 		}
-		instance.Status.DSReplication = status
+		dsStatus.DBs = append(dsStatus.DBs, appsv2beta1.DSDBReplicationStatus{
+			Name:              db.Name,
+			NumShards:         int32(len(db.Shards)),
+			NumShardReplicas:  int32(numShardReplicas),
+			LostShardReplicas: int32(lostShardReplicas),
+			NumTransitions:    int32(numTransitions),
+			MinReplicas:       int32(minReplicas),
+			MaxReplicas:       int32(maxReplicas),
+		})
 	}
+	status.DSReplication = dsStatus
 
 	// update status condition
-	newEMQXStatusMachine(u.Client, instance).NextStatus(ctx)
+	u.updateStatusCondition(r, instance)
 
-	if err := u.Client.Status().Update(ctx, instance); err != nil {
+	if err := u.Client.Status().Update(r.ctx, instance); err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to update status")}
 	}
 	return subResult{}
 }
 
-func (u *updateStatus) getEMQXNodes(ctx context.Context, instance *appsv2beta1.EMQX, r innerReq.RequesterInterface) (coreNodes, replicantNodes []appsv2beta1.EMQXNode, err error) {
-	emqxNodes, err := getEMQXNodesByAPI(r)
-	if err != nil {
-		return nil, nil, emperror.Wrap(err, "failed to get node statues by API")
+func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2beta1.EMQX) {
+	status := &instance.Status
+
+	hasReplicants := appsv2beta1.IsExistReplicant(instance)
+
+	condition := status.GetLastTrueCondition()
+	if condition == nil {
+		instance.Status.SetTrueCondition(appsv2beta1.Initialized)
+		u.updateStatusCondition(r, instance)
+		return
 	}
 
-	list := &corev1.PodList{}
-	_ = u.Client.List(ctx, list,
-		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(appsv2beta1.DefaultLabels(instance)),
-	)
-	for _, node := range emqxNodes {
-		for _, p := range list.Items {
-			pod := p.DeepCopy()
-			host := strings.Split(node.Node[strings.Index(node.Node, "@")+1:], ":")[0]
-			if node.Role == "core" && strings.HasPrefix(host, pod.Name) {
-				node.PodName = pod.Name
-				node.PodUID = pod.UID
-				controllerRef := metav1.GetControllerOf(pod)
-				if controllerRef == nil {
-					continue
-				}
-				node.ControllerUID = controllerRef.UID
-				coreNodes = append(coreNodes, node)
-			}
+	switch condition.Type {
 
-			if node.Role == "replicant" && host == pod.Status.PodIP {
-				node.PodName = pod.Name
-				node.PodUID = pod.UID
-				controllerRef := metav1.GetControllerOf(pod)
-				if controllerRef == nil {
-					continue
-				}
-				node.ControllerUID = controllerRef.UID
-				replicantNodes = append(replicantNodes, node)
+	case appsv2beta1.Initialized:
+		updateSts := r.state.updateCoreSet(instance)
+		if updateSts != nil {
+			u.statusTransition(r, instance, appsv2beta1.CoreNodesProgressing)
+		}
+
+	case appsv2beta1.CoreNodesProgressing:
+		updateSts := r.state.updateCoreSet(instance)
+		if updateSts != nil &&
+			updateSts.Status.ReadyReplicas > 0 &&
+			updateSts.Status.ReadyReplicas == status.CoreNodesStatus.UpdateReplicas {
+			u.statusTransition(r, instance, appsv2beta1.CoreNodesReady)
+		}
+
+	case appsv2beta1.CoreNodesReady:
+		if hasReplicants {
+			u.statusTransition(r, instance, appsv2beta1.ReplicantNodesProgressing)
+		} else {
+			u.statusTransition(r, instance, appsv2beta1.Available)
+		}
+
+	case appsv2beta1.ReplicantNodesProgressing:
+		if hasReplicants {
+			updateRs := r.state.updateReplicantSet(instance)
+			if updateRs != nil &&
+				updateRs.Status.ReadyReplicas > 0 &&
+				updateRs.Status.ReadyReplicas == status.ReplicantNodesStatus.UpdateReplicas {
+				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesReady)
+			}
+		} else {
+			u.resetConditions(r, instance, "NoReplicants")
+		}
+
+	case appsv2beta1.ReplicantNodesReady:
+		if hasReplicants {
+			u.statusTransition(r, instance, appsv2beta1.Available)
+		} else {
+			u.resetConditions(r, instance, "NoReplicants")
+		}
+
+	case appsv2beta1.Available:
+		if status.CoreNodesStatus.UpdateReplicas != status.CoreNodesStatus.Replicas ||
+			status.CoreNodesStatus.ReadyReplicas != status.CoreNodesStatus.Replicas ||
+			status.CoreNodesStatus.UpdateRevision != status.CoreNodesStatus.CurrentRevision {
+			break
+		}
+
+		if hasReplicants {
+			if status.ReplicantNodesStatus.UpdateReplicas != status.ReplicantNodesStatus.Replicas ||
+				status.ReplicantNodesStatus.ReadyReplicas != status.ReplicantNodesStatus.Replicas ||
+				status.ReplicantNodesStatus.UpdateRevision != status.ReplicantNodesStatus.CurrentRevision {
+				break
+			}
+		}
+
+		status.SetCondition(metav1.Condition{
+			Type:    appsv2beta1.Ready,
+			Status:  metav1.ConditionTrue,
+			Reason:  appsv2beta1.Ready,
+			Message: "Cluster is ready",
+		})
+
+	case appsv2beta1.Ready:
+		updateSts := r.state.updateCoreSet(instance)
+		if updateSts != nil &&
+			updateSts.Status.ReadyReplicas != status.CoreNodesStatus.Replicas {
+			u.resetConditions(r, instance, "CoreNodesNotReady")
+			return
+		}
+
+		if hasReplicants {
+			updateRs := r.state.updateReplicantSet(instance)
+			if updateRs != nil &&
+				updateRs.Status.ReadyReplicas != status.ReplicantNodesStatus.Replicas {
+				u.resetConditions(r, instance, "ReplicantNodesNotReady")
+				return
 			}
 		}
 	}
-
-	sort.Slice(coreNodes, func(i, j int) bool {
-		return coreNodes[i].Uptime < coreNodes[j].Uptime
-	})
-	sort.Slice(replicantNodes, func(i, j int) bool {
-		return replicantNodes[i].Uptime < replicantNodes[j].Uptime
-	})
-	return coreNodes, replicantNodes, nil
 }
 
-func getEMQXNodesByAPI(r innerReq.RequesterInterface) ([]appsv2beta1.EMQXNode, error) {
-	url := r.GetURL("api/v5/nodes")
-
-	resp, body, err := r.Request("GET", url, nil, nil)
-	if err != nil {
-		return nil, emperror.Wrapf(err, "failed to get API %s", url.String())
+func (u *updateStatus) resetConditions(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	reason string,
+) {
+	hasReplicants := appsv2beta1.IsExistReplicant(instance)
+	if !hasReplicants {
+		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesProgressing)
+		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
 	}
-	if resp.StatusCode != 200 {
-		return nil, emperror.Errorf("failed to get API %s, status : %s, body: %s", url.String(), resp.Status, body)
-	}
-
-	nodeStatuses := []appsv2beta1.EMQXNode{}
-	if err := json.Unmarshal(body, &nodeStatuses); err != nil {
-		return nil, emperror.Wrap(err, "failed to unmarshal node statuses")
-	}
-	return nodeStatuses, nil
+	instance.Status.ResetConditions(reason)
+	u.updateStatusCondition(r, instance)
 }
 
-func getNodeEvacuationStatusByAPI(r innerReq.RequesterInterface) ([]appsv2beta1.NodeEvacuationStatus, error) {
-	url := r.GetURL("api/v5/load_rebalance/global_status")
-	resp, body, err := r.Request("GET", url, nil, nil)
-	if err != nil {
-		return nil, emperror.Wrapf(err, "failed to get API %s", url.String())
+func (u *updateStatus) statusTransition(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+	conditionType string,
+) {
+	instance.Status.SetTrueCondition(conditionType)
+	u.updateStatusCondition(r, instance)
+}
+
+func switchCoreSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+) (*appsv1.StatefulSet, *appsv1.StatefulSet) {
+	current := r.state.currentCoreSet(instance)
+	update := r.state.updateCoreSet(instance)
+	if (current == nil || current.Status.Replicas == 0) && update != nil {
+		current = nil
+		for _, coreSet := range r.state.coreSets {
+			// Adopt oldest non-empty coreSet if there are more than 2 (current and update) coreSets:
+			if coreSet.UID != update.UID && coreSet.Status.Replicas > 0 {
+				r.log.V(1).Info("adopting non-empty current coreSet", "statefulSet", klog.KObj(coreSet))
+				current = coreSet
+				break
+			}
+		}
+		if current == nil {
+			r.log.V(1).Info("switching update -> current coreSet", "statefulSet", klog.KObj(update))
+			current = update
+		}
 	}
-	if resp.StatusCode != 200 {
-		return nil, emperror.Errorf("failed to get API %s, status : %s, body: %s", url.String(), resp.Status, body)
+	if current != nil {
+		instance.Status.CoreNodesStatus.CurrentRevision = current.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+	}
+	return current, update
+}
+
+func switchReplicantSet(
+	r *reconcileRound,
+	instance *appsv2beta1.EMQX,
+) (*appsv1.ReplicaSet, *appsv1.ReplicaSet) {
+	current := r.state.currentReplicantSet(instance)
+	update := r.state.updateReplicantSet(instance)
+	if (current == nil || current.Status.Replicas == 0) && update != nil {
+		current = nil
+		for _, replicantSet := range r.state.replicantSets {
+			// Adopt oldest non-empty replicantSet if there are more than 2 (current and update) replicantSets:
+			if replicantSet.UID != update.UID && replicantSet.Status.Replicas > 0 {
+				r.log.V(1).Info("adopting non-empty current replicantSet", "replicaSet", klog.KObj(replicantSet))
+				current = replicantSet
+				break
+			}
+		}
+		if current == nil {
+			r.log.V(1).Info("switching update -> current replicantSet", "replicaSet", klog.KObj(update))
+			current = update
+		}
+	}
+	if current != nil {
+		instance.Status.ReplicantNodesStatus.CurrentRevision = current.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+	}
+	return current, update
+}
+
+func (u *updateStatus) getEMQXNodes(r *reconcileRound, instance *appsv2beta1.EMQX) error {
+	emqxNodes, err := api.Nodes(r.api)
+	if err != nil {
+		return err
 	}
 
-	nodeEvacuationStatuses := []appsv2beta1.NodeEvacuationStatus{}
-	data := gjson.GetBytes(body, "evacuations")
-	if err := json.Unmarshal([]byte(data.Raw), &nodeEvacuationStatuses); err != nil {
-		return nil, emperror.Wrap(err, "failed to unmarshal node statuses")
+	status := &instance.Status
+	status.CoreNodes = []appsv2beta1.EMQXNode{}
+	status.ReplicantNodes = []appsv2beta1.EMQXNode{}
+	for _, node := range emqxNodes {
+		list := &status.CoreNodes
+		host := extractHostname(node.Node)
+		if node.Role == "replicant" {
+			list = &status.ReplicantNodes
+		}
+		for _, pod := range r.state.pods {
+			if node.Role == "core" && strings.HasPrefix(host, pod.Name) {
+				node.PodName = pod.Name
+				break
+			}
+			if node.Role == "replicant" && host == pod.Status.PodIP {
+				node.PodName = pod.Name
+				break
+			}
+		}
+		*list = append(*list, node)
 	}
-	return nodeEvacuationStatuses, nil
+
+	sort.Slice(status.CoreNodes, func(i, j int) bool {
+		return status.CoreNodes[i].Uptime < status.CoreNodes[j].Uptime
+	})
+	sort.Slice(status.ReplicantNodes, func(i, j int) bool {
+		return status.ReplicantNodes[i].Uptime < status.ReplicantNodes[j].Uptime
+	})
+
+	return nil
+}
+
+func extractHostname(node string) string {
+	// Example: emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local
+	// Example: emqx@10.244.0.23
+	return strings.Split(node[strings.Index(node, "@")+1:], ":")[0]
 }

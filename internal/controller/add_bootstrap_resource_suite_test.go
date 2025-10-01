@@ -11,14 +11,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
-	var (
-		instance *appsv2beta1.EMQX
-		a        *addBootstrap
-		ns       *corev1.Namespace
-	)
-	instance = new(appsv2beta1.EMQX)
-	ns = &corev1.Namespace{}
+var _ = Describe("Reconciler addBootstrap", Ordered, func() {
+	var instance *appsv2beta1.EMQX = &appsv2beta1.EMQX{}
+	var ns *corev1.Namespace = &corev1.Namespace{}
+	var a *addBootstrap
 
 	BeforeEach(func() {
 		a = &addBootstrap{emqxReconciler}
@@ -57,7 +53,7 @@ var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
 	It("should create bootstrap secrets", func() {
 		// Wait until the bootstrap secrets are created
 		// Call the reconciler.
-		result := a.reconcile(ctx, logger, instance, nil)
+		result := a.reconcile(newReconcileRound(), instance)
 
 		// Make sure there were no errors.
 		Expect(result.err).NotTo(HaveOccurred())
@@ -89,7 +85,7 @@ var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
 		}
 
 		// Call the reconciler.
-		result := a.reconcile(ctx, logger, instance, nil)
+		result := a.reconcile(newReconcileRound(), instance)
 
 		// Make sure there were no errors.
 		Expect(result.err).NotTo(HaveOccurred())
@@ -148,7 +144,7 @@ var _ = Describe("AddBootstrap", Ordered, Label("bootstrap"), func() {
 		Expect(k8sClient.Create(ctx, secretSecret)).Should(Succeed())
 
 		// Call the reconciler.
-		result := a.reconcile(ctx, logger, instance, nil)
+		result := a.reconcile(newReconcileRound(), instance)
 
 		// Make sure there were no errors.
 		Expect(result.err).NotTo(HaveOccurred())

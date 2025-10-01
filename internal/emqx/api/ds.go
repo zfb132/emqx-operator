@@ -1,4 +1,4 @@
-package ds
+package api
 
 import (
 	"encoding/json"
@@ -56,46 +56,13 @@ type DSShardSiteStatus struct {
 	Transition string `json:"transition,omitempty"`
 }
 
-var (
-	APIErrorUnavailable = apiError{StatusCode: 404}
-)
-
-func IsDSAvailable(r req.RequesterInterface) (bool, error) {
-	_, err := apiGet(r, "api/v5/ds/sites")
-	if err == nil {
-		return true, nil
-	}
-	if emperror.Is(err, APIErrorUnavailable) {
-		return false, nil
-	}
-	return false, err
-}
-
-func GetReplicationStatus(r req.RequesterInterface) (DSReplicationStatus, error) {
-	status := DSReplicationStatus{DBs: []DSDBReplicationStatus{}}
-
-	body, err := apiGet(r, "api/v5/ds/storages")
-	if err != nil {
-		return status, err
-	}
-
-	var dsDatabases []string
-	if err := json.Unmarshal(body, &dsDatabases); err != nil {
-		return status, emperror.Wrap(err, "failed to retrieve DS DBs")
-	}
-
-	dbStatus := DSDBReplicationStatus{}
-	for _, db := range dsDatabases {
-		body, err := apiGet(r, "api/v5/ds/storages/"+db)
-		if err != nil {
-			return status, err
+func (c *DSCluster) FindSite(node string) *DSSite {
+	for _, site := range c.Sites {
+		if site.Node == node {
+			return &site
 		}
-		if err := json.Unmarshal(body, &dbStatus); err != nil {
-			return status, emperror.Wrap(err, "failed to unmarshal DS DB replication status")
-		}
-		status.DBs = append(status.DBs, dbStatus)
 	}
-	return status, nil
+	return nil
 }
 
 func (s *DSReplicationStatus) TargetSites() (sites []string) {
@@ -123,10 +90,49 @@ func (s *DSReplicationStatus) TargetSites() (sites []string) {
 	return sites
 }
 
-func GetCluster(r req.RequesterInterface) (DSCluster, error) {
+func IsDSAvailable(r req.RequesterInterface) (bool, error) {
+	_, err := get(r, "api/v5/ds/sites")
+	if err == nil {
+		return true, nil
+	}
+	if emperror.Is(err, ErrorNotFound) {
+		return false, nil
+	}
+	return false, err
+}
+
+func GetDSReplicationStatus(requester req.RequesterInterface) (DSReplicationStatus, error) {
+	status := DSReplicationStatus{DBs: []DSDBReplicationStatus{}}
+
+	body, err := get(requester, "api/v5/ds/storages")
+	if err != nil {
+		return status, err
+	}
+
+	var dsDatabases []string
+	if err := json.Unmarshal(body, &dsDatabases); err != nil {
+		return status, emperror.Wrap(err, "failed to retrieve DS DBs")
+	}
+
+	dbStatus := DSDBReplicationStatus{}
+	for _, db := range dsDatabases {
+		path := fmt.Sprintf("api/v5/ds/storages/%s", db)
+		body, err := get(requester, path)
+		if err != nil {
+			return status, err
+		}
+		if err := json.Unmarshal(body, &dbStatus); err != nil {
+			return status, emperror.Wrap(err, "failed to unmarshal DS DB replication status")
+		}
+		status.DBs = append(status.DBs, dbStatus)
+	}
+	return status, nil
+}
+
+func GetDSCluster(req req.RequesterInterface) (DSCluster, error) {
 	cluster := DSCluster{Sites: []DSSite{}}
 
-	body, err := apiGet(r, "api/v5/ds/sites")
+	body, err := get(req, "api/v5/ds/sites")
 	if err != nil {
 		return cluster, err
 	}
@@ -138,7 +144,8 @@ func GetCluster(r req.RequesterInterface) (DSCluster, error) {
 
 	for _, s := range sites {
 		site := DSSite{ID: s}
-		body, err := apiGet(r, "api/v5/ds/sites/"+s)
+		path := fmt.Sprintf("api/v5/ds/sites/%s", s)
+		body, err := get(req, path)
 		if err != nil {
 			return cluster, err
 		}
@@ -151,50 +158,9 @@ func GetCluster(r req.RequesterInterface) (DSCluster, error) {
 	return cluster, nil
 }
 
-func (c *DSCluster) FindSite(node string) *DSSite {
-	for _, site := range c.Sites {
-		if site.Node == node {
-			return &site
-		}
-	}
-	return nil
-}
-
-func UpdateReplicaSet(r req.RequesterInterface, db string, sites []string) error {
+func UpdateDSReplicaSet(requester req.RequesterInterface, db string, sites []string) error {
+	path := fmt.Sprintf("api/v5/ds/storages/%s/replicas", db)
 	body, _ := json.Marshal(sites)
-	_, err := apiRequest(r, "PUT", "api/v5/ds/storages/"+db+"/replicas", body)
+	_, err := request(requester, "PUT", path, body, nil)
 	return err
-}
-
-type apiError struct {
-	StatusCode int
-	Message    string
-}
-
-func (e apiError) Error() string {
-	return fmt.Sprintf("HTTP %d, response: %s", e.StatusCode, e.Message)
-}
-
-func (e apiError) Is(target error) bool {
-	if target, ok := target.(apiError); ok {
-		return e.StatusCode == target.StatusCode
-	}
-	return false
-}
-
-func apiGet(r req.RequesterInterface, path string) ([]byte, error) {
-	return apiRequest(r, "GET", path, nil)
-}
-
-func apiRequest(r req.RequesterInterface, method string, path string, body []byte) ([]byte, error) {
-	url := r.GetURL(path)
-	resp, body, err := r.Request(method, url, body, nil)
-	if err != nil {
-		return nil, emperror.Wrapf(err, "error accessing DS API %s", url.String())
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		err := apiError{StatusCode: resp.StatusCode, Message: string(body)}
-		return nil, emperror.Wrapf(err, "error accessing DS API %s", url.String())
-	}
-	return body, nil
 }

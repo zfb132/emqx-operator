@@ -1,17 +1,12 @@
 package controller
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/url"
 	"time"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -22,34 +17,170 @@ import (
 const currentRevision string = "current"
 const updateRevision string = "update"
 
-var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
-	var s *syncPods
-	var fakeReq *innerReq.FakeRequester = &innerReq.FakeRequester{}
-	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
+func actualize(instance client.Object) (client.Object, error) {
+	err := k8sClient.Get(ctx, client.ObjectKeyFromObject(instance), instance)
+	return instance, err
+}
+
+var _ = Describe("Reconciler syncPods", Ordered, func() {
 	var ns *corev1.Namespace = &corev1.Namespace{}
+	var instance *appsv2beta1.EMQX
 
-	var updateSts, currentSts *appsv1.StatefulSet
-	var updateRs, currentRs *appsv1.ReplicaSet
-	var currentStsPod, currentRsPod *corev1.Pod
+	var sr *syncReplicantSets
+	var sc *syncCoreSets
+	var round *reconcileRound
 
-	BeforeEach(func() {
-		fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-			resp = &http.Response{
-				StatusCode: 200,
-			}
-			respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{})
-			return resp, respBody, nil
-		}
+	var updateCoreSet, currentCoreSet *appsv1.StatefulSet
+	var updateReplicantSet, currentReplicantSet *appsv1.ReplicaSet
+	var currentCorePod, currentReplicantPod *corev1.Pod
 
-		s = &syncPods{emqxReconciler}
+	BeforeAll(func() {
+		// Create namespace:
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "controller-v2beta1-update-emqx-nodes-test-" + rand.String(5),
+				Name: "controller-v2beta1-sync-pods-suite-test",
 				Labels: map[string]string{
 					"test": "e2e",
 				},
 			},
 		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		// Set up "update" coreSet:
+		instance = emqx.DeepCopy()
+		updateCoreLabels := appsv2beta1.CloneAndAddLabel(
+			appsv2beta1.DefaultCoreLabels(instance),
+			appsv2beta1.LabelsPodTemplateHashKey,
+			updateRevision,
+		)
+		updateCoreSet = &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: instance.Name + "-",
+				Namespace:    ns.Name,
+				Labels:       updateCoreLabels,
+			},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: ptr.To(int32(1)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: updateCoreLabels,
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: updateCoreLabels,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "emqx", Image: "emqx"},
+						},
+					},
+				},
+			},
+		}
+		// Set up "current" coreSet:
+		currentCoreSet = updateCoreSet.DeepCopy()
+		currentCoreSet.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		currentCoreSet.Spec.Selector.MatchLabels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		currentCoreSet.Spec.Template.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		// Set up "update" replicantSet:
+		updateReplicantLabels := appsv2beta1.CloneAndAddLabel(
+			appsv2beta1.DefaultReplicantLabels(instance),
+			appsv2beta1.LabelsPodTemplateHashKey,
+			updateRevision,
+		)
+		updateReplicantSet = &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: instance.Name + "-",
+				Namespace:    ns.Name,
+				Labels:       updateReplicantLabels,
+			},
+			Spec: appsv1.ReplicaSetSpec{
+				Replicas: ptr.To(int32(1)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: updateReplicantLabels,
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: updateReplicantLabels,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "emqx", Image: "emqx"},
+						},
+					},
+				},
+			},
+		}
+		// Set up "current" replicantSet:
+		currentReplicantSet = updateReplicantSet.DeepCopy()
+		currentReplicantSet.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		currentReplicantSet.Spec.Selector.MatchLabels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		currentReplicantSet.Spec.Template.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		// Create resources:
+		Expect(k8sClient.Create(ctx, updateCoreSet)).Should(Succeed())
+		Expect(k8sClient.Create(ctx, updateReplicantSet)).Should(Succeed())
+		Expect(k8sClient.Create(ctx, currentCoreSet)).Should(Succeed())
+		Expect(k8sClient.Create(ctx, currentReplicantSet)).Should(Succeed())
+		// Create "current" coreSet pod:
+		currentCorePod = &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      currentCoreSet.Name + "-0",
+				Namespace: currentCoreSet.Namespace,
+				Labels:    currentCoreSet.Spec.Template.Labels,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: "apps/v1",
+						Kind:       "StatefulSet",
+						Name:       currentCoreSet.Name,
+						UID:        currentCoreSet.UID,
+						Controller: ptr.To(true),
+					},
+				},
+			},
+			Spec: currentCoreSet.Spec.Template.Spec,
+		}
+		Expect(k8sClient.Create(ctx, currentCorePod)).Should(Succeed())
+		// Create "current" replicantSet pod:
+		currentReplicantPod = &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: currentReplicantSet.Name + "-",
+				Namespace:    currentReplicantSet.Namespace,
+				Labels:       currentReplicantSet.Spec.Template.Labels,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: "apps/v1",
+						Kind:       "ReplicaSet",
+						Name:       currentReplicantSet.Name,
+						UID:        currentReplicantSet.UID,
+						Controller: ptr.To(true),
+					},
+				},
+			},
+			Spec: currentReplicantSet.Spec.Template.Spec,
+		}
+		Expect(k8sClient.Create(ctx, currentReplicantPod)).Should(Succeed())
+		// Mock resource status:
+		updateCoreSet.Status.Replicas = 1
+		updateCoreSet.Status.ReadyReplicas = 1
+		updateReplicantSet.Status.Replicas = 1
+		updateReplicantSet.Status.ReadyReplicas = 1
+		currentCoreSet.Status.Replicas = 1
+		currentCoreSet.Status.ReadyReplicas = 1
+		currentReplicantSet.Status.Replicas = 1
+		currentReplicantSet.Status.ReadyReplicas = 1
+		Expect(k8sClient.Status().Update(ctx, updateCoreSet)).Should(Succeed())
+		Expect(k8sClient.Status().Update(ctx, updateReplicantSet)).Should(Succeed())
+		Expect(k8sClient.Status().Update(ctx, currentCoreSet)).Should(Succeed())
+		Expect(k8sClient.Status().Update(ctx, currentReplicantSet)).Should(Succeed())
+	})
+
+	AfterAll(func() {
+		Expect(k8sClient.DeleteAllOf(ctx, &corev1.Pod{}, client.InNamespace(ns.Name))).Should(Succeed())
+		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(ns.Name))).Should(Succeed())
+		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.StatefulSet{}, client.InNamespace(ns.Name))).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
+	})
+
+	BeforeEach(func() {
+		// Mock instance state:
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
 		instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
@@ -73,6 +204,9 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 				ReadyReplicas:   2,
 				Replicas:        1,
 			},
+			CoreNodes: []appsv2beta1.EMQXNode{
+				{Node: "emqx@" + currentCorePod.Name, PodName: currentCorePod.Name, NodeStatus: "running"},
+			},
 			ReplicantNodesStatus: appsv2beta1.EMQXNodesStatus{
 				UpdateRevision:  updateRevision,
 				UpdateReplicas:  1,
@@ -81,210 +215,142 @@ var _ = Describe("Check sync pods controller", Ordered, Label("node"), func() {
 				ReadyReplicas:   2,
 				Replicas:        1,
 			},
-		}
-
-		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
-
-		updateStsLabels := appsv2beta1.CloneAndAddLabel(
-			appsv2beta1.DefaultCoreLabels(instance),
-			appsv2beta1.LabelsPodTemplateHashKey,
-			"update",
-		)
-		updateSts = &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: instance.Name + "-",
-				Namespace:    instance.Namespace,
-				Labels:       updateStsLabels,
-			},
-			Spec: appsv1.StatefulSetSpec{
-				Replicas: ptr.To(int32(1)),
-				Selector: &metav1.LabelSelector{
-					MatchLabels: updateStsLabels,
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: updateStsLabels,
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{Name: "emqx", Image: "emqx"},
-						},
-					},
-				},
+			ReplicantNodes: []appsv2beta1.EMQXNode{
+				{Node: "emqx@10.0.0.1", PodName: currentReplicantPod.Name, NodeStatus: "running"},
 			},
 		}
-
-		currentSts = updateSts.DeepCopy()
-		currentSts.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentSts.Spec.Selector.MatchLabels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentSts.Spec.Template.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-
-		Expect(k8sClient.Create(ctx, updateSts)).Should(Succeed())
-		updateSts.Status.Replicas = 1
-		updateSts.Status.ReadyReplicas = 1
-		Expect(k8sClient.Status().Update(ctx, updateSts)).Should(Succeed())
-
-		Expect(k8sClient.Create(ctx, currentSts)).Should(Succeed())
-		currentSts.Status.Replicas = 1
-		currentSts.Status.ReadyReplicas = 1
-		Expect(k8sClient.Status().Update(ctx, currentSts)).Should(Succeed())
-
-		updateRsLabels := appsv2beta1.CloneAndAddLabel(
-			appsv2beta1.DefaultReplicantLabels(instance),
-			appsv2beta1.LabelsPodTemplateHashKey,
-			"update",
-		)
-		updateRs = &appsv1.ReplicaSet{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: instance.Name + "-",
-				Namespace:    instance.Namespace,
-				Labels:       updateRsLabels,
-			},
-			Spec: appsv1.ReplicaSetSpec{
-				Replicas: ptr.To(int32(1)),
-				Selector: &metav1.LabelSelector{
-					MatchLabels: updateRsLabels,
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: updateRsLabels,
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{Name: "emqx", Image: "emqx"},
-						},
-					},
-				},
-			},
-		}
-
-		currentRs = updateRs.DeepCopy()
-		currentRs.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentRs.Spec.Selector.MatchLabels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentRs.Spec.Template.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-
-		Expect(k8sClient.Create(ctx, updateRs)).Should(Succeed())
-		updateRs.Status.Replicas = 1
-		updateRs.Status.ReadyReplicas = 1
-		Expect(k8sClient.Status().Update(ctx, updateRs)).Should(Succeed())
-
-		Expect(k8sClient.Create(ctx, currentRs)).Should(Succeed())
-		currentRs.Status.Replicas = 1
-		currentRs.Status.ReadyReplicas = 1
-		Expect(k8sClient.Status().Update(ctx, currentRs)).Should(Succeed())
-
-		currentStsPod = &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      currentSts.Name + "-0",
-				Namespace: currentSts.Namespace,
-				Labels:    currentSts.Spec.Template.Labels,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: "apps/v1",
-						Kind:       "StatefulSet",
-						Name:       currentSts.Name,
-						UID:        currentSts.UID,
-						Controller: ptr.To(true),
-					},
-				},
-			},
-			Spec: currentSts.Spec.Template.Spec,
-		}
-		Expect(k8sClient.Create(ctx, currentStsPod)).Should(Succeed())
-
-		currentRsPod = &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: currentRs.Name + "-",
-				Namespace:    currentRs.Namespace,
-				Labels:       currentRs.Spec.Template.Labels,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: "apps/v1",
-						Kind:       "ReplicaSet",
-						Name:       currentRs.Name,
-						UID:        currentRs.UID,
-						Controller: ptr.To(true),
-					},
-				},
-			},
-			Spec: currentRs.Spec.Template.Spec,
-		}
-		Expect(k8sClient.Create(ctx, currentRsPod)).Should(Succeed())
-	})
-
-	AfterEach(func() {
-		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(instance.Namespace))).Should(Succeed())
-		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.StatefulSet{}, client.InNamespace(instance.Namespace))).Should(Succeed())
-		Expect(k8sClient.DeleteAllOf(ctx, &appsv2beta1.EMQX{}, client.InNamespace(instance.Namespace))).Should(Succeed())
-		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
+		// Instantiate reconciler:
+		sc = &syncCoreSets{emqxReconciler}
+		sr = &syncReplicantSets{emqxReconciler}
+		round = newReconcileRound()
+		round.state = loadReconcileState(ctx, k8sClient, instance)
 	})
 
 	It("running update emqx node controller", func() {
 		Eventually(func() *appsv2beta1.EMQX {
-			_ = s.reconcile(ctx, logger, instance, fakeReq)
+			_ = sc.reconcile(round, instance)
+			_ = sr.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(And(
+			// should add pod deletion cost
 			WithTransform(
-				// should add pod deletion cost
-				func(instance *appsv2beta1.EMQX) map[string]string {
-					_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(currentRsPod), currentRsPod)
-					return currentRsPod.Annotations
-				},
-				HaveKeyWithValue("controller.kubernetes.io/pod-deletion-cost", "-99999"),
+				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentReplicantPod) },
+				HaveField("Annotations", HaveKeyWithValue("controller.kubernetes.io/pod-deletion-cost", "-99999")),
 			),
+			// should scale down rs
 			WithTransform(
-				// should scale down rs
-				func(instance *appsv2beta1.EMQX) int32 {
-					_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(currentRs), currentRs)
-					return *currentRs.Spec.Replicas
-				},
-				Equal(int32(0)),
+				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentReplicantSet) },
+				HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(0))),
 			),
+			// before rs not ready, do nothing for sts
 			WithTransform(
-				// before rs not ready, do nothing for sts
-				func(instance *appsv2beta1.EMQX) int32 {
-					_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(currentSts), currentSts)
-					return *currentSts.Spec.Replicas
-				},
-				Equal(int32(1)),
+				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentCoreSet) },
+				HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(1))),
 			),
 		))
 
 		By("mock rs ready, should scale down sts")
 		instance.Status.ReplicantNodesStatus.CurrentRevision = instance.Status.ReplicantNodesStatus.UpdateRevision
 		Eventually(func() *appsv2beta1.EMQX {
-			_ = s.reconcile(ctx, logger, instance, fakeReq)
+			_ = sc.reconcile(round, instance)
+			_ = sr.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(
 			WithTransform(
-				func(instance *appsv2beta1.EMQX) int32 {
-					_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(currentSts), currentSts)
-					return *currentSts.Spec.Replicas
-				}, Equal(int32(0)),
+				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentCoreSet) },
+				HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(0))),
 			),
 		)
 	})
 
 })
 
-var _ = Describe("check can be scale down", func() {
-	var s *syncPods
-	var fakeReq *innerReq.FakeRequester = &innerReq.FakeRequester{}
-	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
+var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 	var ns *corev1.Namespace = &corev1.Namespace{}
+	var instance *appsv2beta1.EMQX
 
-	BeforeEach(func() {
-		s = &syncPods{emqxReconciler}
+	var s *syncCoreSets
+	var round *reconcileRound
+	var current *appsv1.StatefulSet
+	var currentPod *corev1.Pod
+
+	BeforeAll(func() {
+		// Create namespace:
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "controller-v2beta1-update-emqx-nodes-test-" + rand.String(5),
-				Labels: map[string]string{
-					"test": "e2e",
+				Name:   "controller-v2beta1-sync-core-sets-test",
+				Labels: map[string]string{"test": "e2e"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		// Create "current" coreSet:
+		instance = emqx.DeepCopy()
+		currentLabels := appsv2beta1.CloneAndAddLabel(
+			appsv2beta1.DefaultCoreLabels(instance),
+			appsv2beta1.LabelsPodTemplateHashKey,
+			"fake",
+		)
+		current = &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      instance.Name + "-fake",
+				Namespace: ns.Name,
+				Labels:    currentLabels,
+			},
+			Spec: appsv1.StatefulSetSpec{
+				ServiceName: instance.Name + "-fake",
+				Replicas:    ptr.To(int32(1)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: currentLabels,
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: currentLabels,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "emqx", Image: "emqx"},
+						},
+					},
 				},
 			},
 		}
+		Expect(k8sClient.Create(ctx, current)).Should(Succeed())
+		// Create "current" coreSet pod:
+		currentPod = &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      current.Name + "-0",
+				Namespace: ns.Name,
+				Labels:    current.Spec.Template.Labels,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: "apps/v1",
+						Kind:       "StatefulSet",
+						Name:       current.Name,
+						UID:        current.UID,
+						Controller: ptr.To(true),
+					},
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "emqx", Image: "emqx"},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, currentPod)).Should(Succeed())
+	})
+
+	AfterAll(func() {
+		Expect(k8sClient.DeleteAllOf(ctx, &corev1.Pod{}, client.InNamespace(ns.Name))).Should(Succeed())
+		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.StatefulSet{}, client.InNamespace(ns.Name))).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
+	})
+
+	BeforeEach(func() {
+		// Mock instance state:
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
+		instance.Status.CoreNodesStatus.CurrentRevision = "fake"
 		instance.Status.Conditions = []metav1.Condition{
 			{
 				Type:               appsv2beta1.Available,
@@ -292,292 +358,225 @@ var _ = Describe("check can be scale down", func() {
 				LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
 			},
 		}
-
-		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
-
+		instance.Status.CoreNodes = []appsv2beta1.EMQXNode{
+			{Node: "emqx@" + currentPod.Name, PodName: currentPod.Name, NodeStatus: "running"},
+		}
+		// Instantiate reconciler:
+		s = &syncCoreSets{emqxReconciler}
+		round = newReconcileRound()
+		round.state = loadReconcileState(ctx, k8sClient, instance)
 	})
 
-	AfterEach(func() {
-		Expect(k8sClient.DeleteAllOf(ctx, &corev1.Pod{}, client.InNamespace(instance.Namespace))).Should(Succeed())
-		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(instance.Namespace))).Should(Succeed())
-		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.StatefulSet{}, client.InNamespace(instance.Namespace))).Should(Succeed())
-		Expect(k8sClient.DeleteAllOf(ctx, &appsv2beta1.EMQX{}, client.InNamespace(instance.Namespace))).Should(Succeed())
+	It("emqx is not available", func() {
+		instance.Status.Conditions = []metav1.Condition{}
+		admission, err := s.chooseScaleDownCore(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", ContainSubstring("not ready")),
+			HaveField("Pod", BeNil()),
+		))
+	})
+
+	It("emqx is available / initial delay has not passed", func() {
+		instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
+		admission, err := s.chooseScaleDownCore(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", ContainSubstring("not ready")),
+			HaveField("Pod", BeNil()),
+		))
+	})
+
+	It("replicaSet is not ready", func() {
+		instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
+			Spec: appsv2beta1.EMQXReplicantTemplateSpec{
+				Replicas: ptr.To(int32(3)),
+			},
+		}
+		instance.Status.ReplicantNodesStatus = appsv2beta1.EMQXNodesStatus{
+			UpdateRevision:  updateRevision,
+			CurrentRevision: currentRevision,
+		}
+		admission, err := s.chooseScaleDownCore(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", ContainSubstring("replicaSet")),
+			HaveField("Pod", BeNil()),
+		))
+		Eventually(s.reconcile).WithArguments(newReconcileRound(), instance).
+			WithTimeout(timeout).
+			WithPolling(interval).
+			Should(Equal(subResult{}))
+	})
+
+	It("node session > 0", func() {
+		instance.Status.CoreNodes[0].Session = 99999
+		admission, err := s.chooseScaleDownCore(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", Not(BeEmpty())),
+			HaveField("Pod", BeNil()),
+		))
+	})
+
+	It("node session is 0", func() {
+		instance.Status.CoreNodes[0].Session = 0
+		admission, err := s.chooseScaleDownCore(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", BeEmpty()),
+			HaveField("Pod", Not(BeNil())),
+		))
+	})
+})
+
+var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
+	var ns *corev1.Namespace = &corev1.Namespace{}
+	var instance *appsv2beta1.EMQX
+
+	var s *syncReplicantSets
+	var round *reconcileRound
+	var current *appsv1.ReplicaSet
+	var currentPod *corev1.Pod
+
+	BeforeAll(func() {
+		// Create namespace:
+		ns = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "controller-v2beta1-sync-replicant-sets-test",
+				Labels: map[string]string{
+					"test": "e2e",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		// Create "current" replicaSet:
+		instance = emqx.DeepCopy()
+		current = &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: instance.Name + "-",
+				Namespace:    ns.Name,
+				Labels:       appsv2beta1.DefaultReplicantLabels(instance),
+			},
+			Spec: appsv1.ReplicaSetSpec{
+				Replicas: ptr.To(int32(1)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: appsv2beta1.DefaultReplicantLabels(instance),
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: appsv2beta1.DefaultReplicantLabels(instance),
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "emqx", Image: "emqx"},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, current)).Should(Succeed())
+		// Create "current" replicaSet pod:
+		currentPod = &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: current.Name + "-",
+				Namespace:    ns.Name,
+				Labels:       current.Spec.Selector.MatchLabels,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: "apps/v1",
+						Kind:       "ReplicaSet",
+						Name:       current.Name,
+						UID:        current.UID,
+						Controller: ptr.To(true),
+					},
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "emqx", Image: "emqx"},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, currentPod)).Should(Succeed())
+	})
+
+	AfterAll(func() {
+		Expect(k8sClient.DeleteAllOf(ctx, &corev1.Pod{}, client.InNamespace(ns.Name))).Should(Succeed())
+		Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(ns.Name))).Should(Succeed())
 		Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
 	})
 
-	Context("check can be scale down sts", func() {
-		var oldSts *appsv1.StatefulSet
-		var oldStsPod *corev1.Pod
-
-		JustBeforeEach(func() {
-			oldStsLabels := appsv2beta1.CloneAndAddLabel(
-				appsv2beta1.DefaultCoreLabels(instance),
-				appsv2beta1.LabelsPodTemplateHashKey,
-				"fake",
-			)
-			oldSts = &appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      instance.Name + "-fake",
-					Namespace: instance.Namespace,
-					Labels:    oldStsLabels,
-				},
-				Spec: appsv1.StatefulSetSpec{
-					ServiceName: instance.Name + "-fake",
-					Replicas:    ptr.To(int32(1)),
-					Selector: &metav1.LabelSelector{
-						MatchLabels: oldStsLabels,
-					},
-					Template: corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Labels: oldStsLabels,
-						},
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{Name: "emqx", Image: "emqx"},
-							},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, oldSts)).Should(Succeed())
-			oldStsPod = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      oldSts.Name + "-0",
-					Namespace: oldSts.Namespace,
-					Labels:    oldSts.Spec.Template.Labels,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "apps/v1",
-							Kind:       "StatefulSet",
-							Name:       oldSts.Name,
-							UID:        oldSts.UID,
-							Controller: ptr.To(true),
-						},
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{Name: "emqx", Image: "emqx"},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, oldStsPod)).Should(Succeed())
-		})
-
-		It("emqx is not available", func() {
-			instance.Status.Conditions = []metav1.Condition{}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, nil)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
-
-		It("emqx is available, but initial delay has not passed", func() {
-			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, nil)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
-
-		It("replicaSet is not ready", func() {
-			instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
-				Spec: appsv2beta1.EMQXReplicantTemplateSpec{
-					Replicas: ptr.To(int32(3)),
-				},
-			}
-			instance.Status.ReplicantNodesStatus = appsv2beta1.EMQXNodesStatus{
-				UpdateRevision:  updateRevision,
-				CurrentRevision: currentRevision,
-			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, nil)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-			Eventually(s.reconcile).WithArguments(ctx, logger, instance, fakeReq).
-				WithTimeout(timeout).
-				WithPolling(interval).
-				Should(Equal(subResult{}))
-		})
-
-		It("emqx is enterprise, and node session more than 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-				resp = &http.Response{
-					StatusCode: 200,
-				}
-				if method == "GET" {
-					respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-						Session: 99999,
-					})
-				}
-				return resp, respBody, nil
-			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, fakeReq)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
-
-		It("emqx is enterprise, and node session is 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-				resp = &http.Response{
-					StatusCode: 200,
-				}
-				respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-					Session: 0,
-				})
-				return resp, respBody, nil
-			}
-			r := &syncPodsReconciliation{s, instance, nil, oldSts, nil, nil}
-			admission, err := r.canScaleDownStatefulSet(ctx, fakeReq)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", BeEmpty()),
-				HaveField("Pod", Not(BeNil())),
-			))
-		})
+	BeforeEach(func() {
+		// Mock instance state:
+		instance = emqx.DeepCopy()
+		instance.Namespace = ns.Name
+		instance.Status.ReplicantNodesStatus.CurrentRevision = "fake"
+		instance.Status.Conditions = []metav1.Condition{
+			{
+				Type:               appsv2beta1.Available,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
+			},
+		}
+		instance.Status.ReplicantNodes = []appsv2beta1.EMQXNode{
+			{Node: "emqx@10.0.0.1", PodName: currentPod.Name, NodeStatus: "running"},
+		}
+		// Instantiate reconciler:
+		s = &syncReplicantSets{emqxReconciler}
+		round = newReconcileRound()
+		round.state = loadReconcileState(ctx, k8sClient, instance)
 	})
 
-	Context("check can be scale down rs", func() {
-		var oldRs *appsv1.ReplicaSet
-		JustBeforeEach(func() {
-			oldRs = &appsv1.ReplicaSet{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: instance.Name + "-",
-					Namespace:    instance.Namespace,
-					Labels:       appsv2beta1.DefaultReplicantLabels(instance),
-				},
-				Spec: appsv1.ReplicaSetSpec{
-					Replicas: ptr.To(int32(1)),
-					Selector: &metav1.LabelSelector{
-						MatchLabels: appsv2beta1.DefaultReplicantLabels(instance),
-					},
-					Template: corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Labels: appsv2beta1.DefaultReplicantLabels(instance),
-						},
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{Name: "emqx", Image: "emqx"},
-							},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, oldRs)).Should(Succeed())
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(oldRs), oldRs)).Should(Succeed())
+	It("emqx is not available", func() {
+		instance.Status.Conditions = []metav1.Condition{}
+		admission, err := s.chooseScaleDownReplicant(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", ContainSubstring("not ready")),
+			HaveField("Pod", BeNil()),
+		))
+	})
 
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: oldRs.Name + "-",
-					Namespace:    oldRs.Namespace,
-					Labels:       oldRs.Spec.Selector.MatchLabels,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "apps/v1",
-							Kind:       "ReplicaSet",
-							Name:       oldRs.Name,
-							UID:        oldRs.UID,
-							Controller: ptr.To(true),
-						},
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{Name: "emqx", Image: "emqx"},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-		})
+	It("emqx is available / initial delay has not passed", func() {
+		instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
+		admission, err := s.chooseScaleDownReplicant(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", ContainSubstring("not ready")),
+			HaveField("Pod", BeNil()),
+		))
+	})
 
-		It("emqx is not available", func() {
-			instance.Status.Conditions = []metav1.Condition{}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, nil)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
+	It("emqx is in node evacuations", func() {
+		instance.Status.NodeEvacuationsStatus = []appsv2beta1.NodeEvacuationStatus{
+			{State: "fake"},
+		}
+		admission, err := s.chooseScaleDownReplicant(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", ContainSubstring("evacuation")),
+			HaveField("Pod", BeNil()),
+		))
+	})
 
-		It("emqx is available, but is not initial delay seconds", func() {
-			instance.Spec.UpdateStrategy.InitialDelaySeconds = 99999999
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, nil)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
+	It("node session > 0", func() {
+		instance.Status.ReplicantNodes[0].Session = 99999
+		admission, err := s.chooseScaleDownReplicant(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", Not(BeEmpty())),
+			HaveField("Pod", BeNil()),
+		))
+	})
 
-		It("emqx is in node evacuations", func() {
-			instance.Status.NodeEvacuationsStatus = []appsv2beta1.NodeEvacuationStatus{
-				{
-					State: "fake",
-				},
-			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, nil)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
-
-		It("emqx is enterprise, and node session more than 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-				resp = &http.Response{
-					StatusCode: 200,
-				}
-				if method == "GET" {
-					respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-						Session: 99999,
-					})
-				}
-				return resp, respBody, nil
-			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, fakeReq)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", Not(BeEmpty())),
-				HaveField("Pod", BeNil()),
-			))
-		})
-
-		It("emqx is enterprise, and node session is 0", func() {
-			fakeReq.ReqFunc = func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
-				resp = &http.Response{
-					StatusCode: 200,
-				}
-				respBody, _ = json.Marshal(&appsv2beta1.EMQXNode{
-					Session: 0,
-				})
-				return resp, respBody, nil
-			}
-			r := &syncPodsReconciliation{s, instance, nil, nil, nil, oldRs}
-			admission, err := r.canScaleDownReplicaSet(ctx, fakeReq)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(admission).Should(And(
-				HaveField("Reason", BeEmpty()),
-				HaveField("Pod", Not(BeNil())),
-			))
-		})
+	It("node session is 0", func() {
+		instance.Status.ReplicantNodes[0].Session = 0
+		admission, err := s.chooseScaleDownReplicant(round, instance, current)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(admission).Should(And(
+			HaveField("Reason", BeEmpty()),
+			HaveField("Pod", Not(BeNil())),
+		))
 	})
 })

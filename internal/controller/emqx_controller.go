@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"time"
 
-	emperror "emperror.dev/errors"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -35,10 +34,22 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 
-	innerErr "github.com/emqx/emqx-operator/internal/errors"
+	"github.com/emqx/emqx-operator/internal/errors"
 	"github.com/emqx/emqx-operator/internal/handler"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
+	req "github.com/emqx/emqx-operator/internal/requester"
 )
+
+// Currently executing round of reconciliation
+type reconcileRound struct {
+	ctx context.Context
+	log logr.Logger
+	// Populated by `loadConfig` reconciler:
+	conf *config.Conf
+	// Populated by `setupAPIRequester` reconciler:
+	api req.RequesterInterface
+	// Populated by loadState reconciler:
+	state *reconcileState
+}
 
 // subResult provides a wrapper around different results from a subreconciler.
 type subResult struct {
@@ -47,13 +58,16 @@ type subResult struct {
 }
 
 type subReconciler interface {
-	reconcile(ctx context.Context, logger logr.Logger, instance *appsv2beta1.EMQX, r innerReq.RequesterInterface) subResult
+	reconcile(*reconcileRound, *appsv2beta1.EMQX) subResult
+}
+
+func subReconcilerName(s subReconciler) string {
+	return reflect.TypeOf(s).Elem().Name()
 }
 
 // EMQXReconciler reconciles a EMQX object
 type EMQXReconciler struct {
 	*handler.Handler
-	conf          *config.Conf
 	Clientset     *kubernetes.Clientset
 	Scheme        *runtime.Scheme
 	EventRecorder record.EventRecorder
@@ -74,17 +88,9 @@ func NewEMQXReconciler(mgr manager.Manager) *EMQXReconciler {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the EMQX object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
 func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var err error
-	logger := log.FromContext(ctx)
-
 	instance := &appsv2beta1.EMQX{}
 	if err := r.Client.Get(ctx, req.NamespacedName, instance); err != nil {
 		if k8sErrors.IsNotFound(err) {
@@ -97,51 +103,46 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	err = r.LoadEMQXConf(instance)
-	if err != nil {
-		r.EventRecorder.Event(instance, corev1.EventTypeWarning, "InvalidConfig", "the .spec.config.data is not a valid HOCON config")
-		return ctrl.Result{}, err
-	}
-
-	requester, err := apiRequester(ctx, r.Client, instance, r.conf)
-	if err != nil {
-		if k8sErrors.IsNotFound(emperror.Cause(err)) {
-			_ = (&addBootstrap{r}).reconcile(ctx, logger, instance, nil)
-			return ctrl.Result{RequeueAfter: time.Second}, nil
-		}
-		return ctrl.Result{}, emperror.Wrap(err, "failed to get bootstrap user")
-	}
+	logger := log.FromContext(ctx)
+	round := reconcileRound{ctx: ctx, log: logger}
 
 	for _, subReconciler := range []subReconciler{
+		// Load EMQX configuration defined in the spec.config.data:
+		&loadConfig{r},
+		// Load the current state of the resources managed by the controller:
+		&loadState{r},
+		// Setup secrets with bootstrap API keys / node cookie:
 		&addBootstrap{r},
-		&updatePodConditions{r},
+		// Instantiate API requester for the current round:
+		&setupAPIRequester{r},
+		// Perform reconciliation steps:
 		&updateStatus{r},
+		&updatePodConditions{r},
 		&syncConfig{r},
-		&addHeadlessSvc{r},
-		&addCore{r},
-		&addRepl{r},
+		&addHeadlessService{r},
+		&addCoreSet{r},
+		&addReplicantSet{r},
 		&addPdb{r},
-		&addSvc{r},
-		&updatePodConditions{r},
-		&updateStatus{r},
+		&addService{r},
 		&dsUpdateReplicaSets{r},
 		&dsReflectPodCondition{r},
-		&syncPods{r},
+		&syncReplicantSets{r},
+		&syncCoreSets{r},
 		&syncSets{r},
 	} {
-		subResult := subReconciler.reconcile(ctx, logger, instance, requester)
+		round.log = logger.WithValues("reconciler", subReconcilerName(subReconciler))
+		subResult := subReconciler.reconcile(&round, instance)
 		if !subResult.result.IsZero() {
 			return subResult.result, nil
 		}
 		if subResult.err != nil {
-			if innerErr.IsCommonError(subResult.err) {
-				logger.V(1).Info("requeue reconcile", "reconciler", subReconciler, "reason", subResult.err)
+			if errors.IsCommonError(subResult.err) {
+				round.log.Info("reconciler requeue", "reason", subResult.err)
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			r.EventRecorder.Eventf(instance, corev1.EventTypeWarning,
-				"ReconcilerFailed", "reconcile failed at step %s, reason: %s",
-				reflect.TypeOf(subReconciler).Elem().Name(),
-				subResult.err.Error(),
+				"ReconcilerFailed",
+				"reconcile failed at step %s, reason: %s", subReconcilerName(subReconciler), subResult.err.Error(),
 			)
 			return ctrl.Result{}, subResult.err
 		}
@@ -152,15 +153,6 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 	return ctrl.Result{RequeueAfter: time.Duration(30) * time.Second}, nil
-}
-
-func (r *EMQXReconciler) LoadEMQXConf(instance *appsv2beta1.EMQX) error {
-	var err error
-	r.conf, err = config.EMQXConf(config.MergeDefaults(instance.Spec.Config.Data))
-	if err != nil {
-		return emperror.Wrap(err, "failed to parse config")
-	}
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

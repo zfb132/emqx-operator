@@ -18,9 +18,7 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	emperror "emperror.dev/errors"
@@ -37,12 +35,8 @@ import (
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 
 	config "github.com/emqx/emqx-operator/internal/controller/config"
-	innerReq "github.com/emqx/emqx-operator/internal/requester"
-	"github.com/tidwall/gjson"
-)
-
-const (
-	ApiRebalanceV5 = "api/v5/load_rebalance"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
+	req "github.com/emqx/emqx-operator/internal/requester"
 )
 
 // RebalanceReconciler reconciles a Rebalance object
@@ -68,16 +62,16 @@ func NewRebalanceReconciler(mgr manager.Manager) *RebalanceReconciler {
 // move the current state of the cluster closer to the desired state.
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
-func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	var err error
 	var finalizer string = "apps.emqx.io/finalizer"
-	var requester innerReq.RequesterInterface
+	var req req.RequesterInterface
 
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Reconcile rebalance")
 
 	rebalance := &appsv2beta1.Rebalance{}
-	if err := r.Client.Get(ctx, req.NamespacedName, rebalance); err != nil {
+	if err := r.Client.Get(ctx, request.NamespacedName, rebalance); err != nil {
 		if k8sErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -120,14 +114,16 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, emperror.New("failed to parse config")
 	}
 
-	requester, err = apiRequester(ctx, r.Client, emqx, conf)
+	state := loadReconcileState(ctx, r.Client, emqx)
+	req, err = apiRequester(ctx, r.Client, conf, state, emqx)
 	if err != nil {
 		return ctrl.Result{}, emperror.New("failed to get create emqx http API")
 	}
 
 	if !rebalance.DeletionTimestamp.IsZero() {
 		if rebalance.Status.Phase == appsv2beta1.RebalancePhaseProcessing {
-			_ = stopRebalance(requester, rebalance)
+			coordinatorNode := rebalance.Status.RebalanceStates[0].CoordinatorNode
+			_ = api.StopRebalance(req, coordinatorNode)
 		}
 		controllerutil.RemoveFinalizer(rebalance, finalizer)
 		return ctrl.Result{}, r.Client.Update(ctx, rebalance)
@@ -140,7 +136,7 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	rebalanceStatusHandler(emqx, rebalance, requester, startRebalance, getRebalanceStatus)
+	rebalanceStatusHandler(emqx, rebalance, req)
 	if err := r.Client.Status().Update(ctx, rebalance); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -170,17 +166,10 @@ func (r *RebalanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// Rebalance Handler
-type GetRebalanceStatusFunc func(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface) ([]appsv2beta1.RebalanceState, error)
-type StartRebalanceFunc func(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error
-type StopRebalanceFunc func(requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error
-
-func rebalanceStatusHandler(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebalance, requester innerReq.RequesterInterface,
-	startFun StartRebalanceFunc, getRebalanceStatusFun GetRebalanceStatusFunc,
-) {
+func rebalanceStatusHandler(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebalance, req req.RequesterInterface) {
 	switch rebalance.Status.Phase {
 	case "":
-		if err := startFun(emqx, requester, rebalance); err != nil {
+		if err := startRebalance(emqx, rebalance, req); err != nil {
 			_ = rebalance.Status.SetFailed(appsv2beta1.RebalanceCondition{
 				Type:    appsv2beta1.RebalanceConditionFailed,
 				Status:  corev1.ConditionTrue,
@@ -193,7 +182,7 @@ func rebalanceStatusHandler(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebal
 			Status: corev1.ConditionTrue,
 		})
 	case appsv2beta1.RebalancePhaseProcessing:
-		rebalanceStates, err := getRebalanceStatusFun(emqx, requester)
+		rebalanceStates, err := getRebalanceStatus(req)
 		if err != nil {
 			_ = rebalance.Status.SetFailed(appsv2beta1.RebalanceCondition{
 				Type:    appsv2beta1.RebalanceConditionFailed,
@@ -222,81 +211,12 @@ func rebalanceStatusHandler(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebal
 	}
 }
 
-func startRebalance(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error {
-	nodes := getEmqxNodes(emqx)
-
-	path := fmt.Sprintf("%s/%s/start", ApiRebalanceV5, nodes[0])
-	body := getRequestBytes(rebalance, nodes)
-	resp, _, err := requester.Request("POST", requester.GetURL(path), body, nil)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return emperror.Errorf("request api failed: %s", resp.Status)
-	}
-
-	return nil
+func startRebalance(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebalance, req req.RequesterInterface) error {
+	return api.StartRebalance(req, rebalance.Spec.RebalanceStrategy, getEmqxNodes(emqx))
 }
 
-func getRebalanceStatus(emqx *appsv2beta1.EMQX, requester innerReq.RequesterInterface) ([]appsv2beta1.RebalanceState, error) {
-	path := fmt.Sprintf("%s/global_status", ApiRebalanceV5)
-	resp, body, err := requester.Request("GET", requester.GetURL(path), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != 200 {
-		return nil, emperror.Errorf("request api failed: %s", resp.Status)
-	}
-	rebalanceStates := []appsv2beta1.RebalanceState{}
-	data := gjson.GetBytes(body, "rebalances")
-	if err := json.Unmarshal([]byte(data.Raw), &rebalanceStates); err != nil {
-		return nil, emperror.Wrap(err, "failed to unmarshal rebalances")
-	}
-	return rebalanceStates, nil
-}
-
-func stopRebalance(requester innerReq.RequesterInterface, rebalance *appsv2beta1.Rebalance) error {
-	// stop rebalance should use coordinatorNode as path parameter
-	path := fmt.Sprintf("%s/%s/stop", ApiRebalanceV5, rebalance.Status.RebalanceStates[0].CoordinatorNode)
-	resp, respBody, err := requester.Request("POST", requester.GetURL(path), nil, nil)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != 200 {
-		return emperror.Errorf("request api failed: %s", resp.Status)
-	}
-	code := gjson.GetBytes(respBody, "code")
-	if code.String() == "400" {
-		message := gjson.GetBytes(respBody, "message")
-		return emperror.New(message.String())
-	}
-	return nil
-}
-
-func getRequestBytes(rebalance *appsv2beta1.Rebalance, nodes []string) []byte {
-	body := map[string]interface{}{
-		"conn_evict_rate":    rebalance.Spec.RebalanceStrategy.ConnEvictRate,
-		"sess_evict_rate":    rebalance.Spec.RebalanceStrategy.SessEvictRate,
-		"wait_takeover":      rebalance.Spec.RebalanceStrategy.WaitTakeover,
-		"wait_health_check":  rebalance.Spec.RebalanceStrategy.WaitHealthCheck,
-		"abs_conn_threshold": rebalance.Spec.RebalanceStrategy.AbsConnThreshold,
-		"abs_sess_threshold": rebalance.Spec.RebalanceStrategy.AbsSessThreshold,
-		"nodes":              nodes,
-	}
-
-	if len(rebalance.Spec.RebalanceStrategy.RelConnThreshold) > 0 {
-		relConnThreshold, _ := strconv.ParseFloat(rebalance.Spec.RebalanceStrategy.RelConnThreshold, 64)
-		body["rel_conn_threshold"] = relConnThreshold
-	}
-
-	if len(rebalance.Spec.RebalanceStrategy.RelSessThreshold) > 0 {
-		relSessThreshold, _ := strconv.ParseFloat(rebalance.Spec.RebalanceStrategy.RelSessThreshold, 64)
-		body["rel_sess_threshold"] = relSessThreshold
-	}
-
-	bytes, _ := json.Marshal(body)
-	return bytes
+func getRebalanceStatus(req req.RequesterInterface) ([]appsv2beta1.RebalanceState, error) {
+	return api.GetRebalanceStatus(req)
 }
 
 // helper functions

@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -26,6 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
+	ginkgotypes "github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
 
@@ -40,6 +43,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	config "github.com/emqx/emqx-operator/internal/controller/config"
+	req "github.com/emqx/emqx-operator/internal/requester"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -56,6 +61,7 @@ var logger logr.Logger
 var timeout, interval time.Duration
 
 var emqxReconciler *EMQXReconciler
+var emqxConf *config.Conf
 var emqx *appsv2beta1.EMQX = &appsv2beta1.EMQX{
 	ObjectMeta: metav1.ObjectMeta{
 		UID:  "fake-1234567890",
@@ -72,8 +78,9 @@ var emqx *appsv2beta1.EMQX = &appsv2beta1.EMQX{
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
-
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Controller Suite", ginkgotypes.ReporterConfig{
+		Verbose: true,
+	})
 }
 
 var _ = BeforeSuite(func() {
@@ -133,7 +140,9 @@ var _ = BeforeSuite(func() {
 	}()
 
 	emqxReconciler = NewEMQXReconciler(k8sManager)
-	Expect(emqxReconciler.LoadEMQXConf(emqx)).To(Succeed())
+	emqxConf, err = config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+	Expect(err).ToNot(HaveOccurred())
+	Expect(emqxConf).ToNot(BeNil())
 })
 
 var _ = AfterSuite(func() {
@@ -143,3 +152,22 @@ var _ = AfterSuite(func() {
 	// err := testEnv.Stop()
 	// Expect(err).NotTo(HaveOccurred())
 })
+
+func newReconcileRound() *reconcileRound {
+	req := req.NewMockRequester(
+		func(method string, url url.URL, body []byte, header http.Header) (resp *http.Response, respBody []byte, err error) {
+			return &http.Response{StatusCode: 501}, []byte{}, nil
+		},
+	)
+	return newReconcileRoundWithRequester(req)
+}
+
+func newReconcileRoundWithRequester(api req.RequesterInterface) *reconcileRound {
+	return &reconcileRound{
+		ctx:   ctx,
+		log:   logger,
+		conf:  emqxConf,
+		api:   api,
+		state: &reconcileState{},
+	}
+}

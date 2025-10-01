@@ -17,7 +17,6 @@ limitations under the License.
 package v2beta1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -162,80 +161,4 @@ func AddLabel(labels map[string]string, labelKey, labelValue string) map[string]
 	}
 	labels[labelKey] = labelValue
 	return labels
-}
-
-func FindPodCondition(pod *corev1.Pod, conditionType corev1.PodConditionType) *corev1.PodCondition {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == conditionType {
-			return &condition
-		}
-	}
-	return nil
-}
-
-func MergeServicePorts(ports1, ports2 []corev1.ServicePort) []corev1.ServicePort {
-	ports := append(ports1, ports2...)
-
-	result := make([]corev1.ServicePort, 0, len(ports))
-	tempName := map[string]struct{}{}
-	tempPort := map[int32]struct{}{}
-
-	for _, item := range ports {
-		_, nameOK := tempName[item.Name]
-		_, portOK := tempPort[item.Port]
-
-		if !nameOK && !portOK {
-			tempName[item.Name] = struct{}{}
-			tempPort[item.Port] = struct{}{}
-			result = append(result, item)
-		}
-	}
-
-	return result
-}
-
-func MergeContainerPorts(ports1, ports2 []corev1.ContainerPort) []corev1.ContainerPort {
-	ports := append(ports1, ports2...)
-
-	result := make([]corev1.ContainerPort, 0, len(ports))
-	tempName := map[string]struct{}{}
-	tempPort := map[int32]struct{}{}
-
-	for _, item := range ports {
-		_, nameOK := tempName[item.Name]
-		_, portOK := tempPort[item.ContainerPort]
-
-		if !nameOK && !portOK {
-			tempName[item.Name] = struct{}{}
-			tempPort[item.ContainerPort] = struct{}{}
-			result = append(result, item)
-		}
-	}
-
-	return result
-}
-
-func TransServicePortsToContainerPorts(ports []corev1.ServicePort) []corev1.ContainerPort {
-	result := make([]corev1.ContainerPort, 0, len(ports))
-	for _, item := range ports {
-		result = append(result, corev1.ContainerPort{
-			Name:          item.Name,
-			ContainerPort: item.Port,
-			Protocol:      item.Protocol,
-		})
-	}
-	return result
-}
-
-func mergeMap(dst, src map[string]string) map[string]string {
-	if dst == nil {
-		dst = make(map[string]string)
-	}
-
-	for key, value := range src {
-		if _, ok := dst[key]; !ok {
-			dst[key] = value
-		}
-	}
-	return dst
 }

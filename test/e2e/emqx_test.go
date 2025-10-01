@@ -120,8 +120,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 
 	Context("EMQX Cluster", func() {
 		var coreReplicas int = 2
-		It("deploy EMQX cluster without replicant node", func() {
-			By("creating EMQX cluster")
+		It("deploy cluster", func() {
 			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/emqx.yaml")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to apply emqx.yaml")
@@ -130,8 +129,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			verifyNoReplicants()
 		})
 
-		It("scale EMQX cluster without replicant node", func() {
-			By("scaling up EMQX cluster")
+		It("scale cluster up", func() {
 			coreReplicas = 3
 			changingTime := metav1.Now()
 			cmd := exec.Command(
@@ -146,7 +144,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			verifyNoReplicants()
 		})
 
-		It("change EMQX image for target blue-green update", func() {
+		It("change image to trigger blue-green update", func() {
 			By("creating MQTTX client")
 			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/mqttx.yaml")
 			_, err := utils.Run(cmd)
@@ -190,17 +188,6 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 				return out
 			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(ContainSubstring("connection_eviction_rate"))
 
-			By(("deleting old storage statefulSet pods by hands, so that can be running faster"))
-			cmd = exec.Command("kubectl", "get", "sts", storageSts.Name, "-o", "jsonpath={.status.currentRevision}")
-			storageStsCurrentRevision, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to get statefulset currentRevision")
-			cmd = exec.Command(
-				"kubectl", "delete", "pod",
-				"-l", "controller-revision-hash="+storageStsCurrentRevision,
-			)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to delete storage pods")
-
 			verifyEMQXStatus(coreReplicas, &changingTime)
 			verifyNoReplicants()
 
@@ -215,8 +202,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 				To(Succeed(), "Failed to delete MQTTX workload")
 		})
 
-		It("delete EMQX cluster without replicant node", func() {
-			By("deleting EMQX cluster")
+		It("delete cluster", func() {
 			cmd := exec.Command("kubectl", "delete", "emqx", "emqx")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to delete emqx cluster")
@@ -228,10 +214,10 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 		})
 	})
 
-	Context("EMQX Cluster with replicant Node", func() {
+	Context("EMQX Core-Replicant Cluster", func() {
 		var coreReplicas int = 2
 		var replicantReplicas int = 2
-		It("deploy EMQX cluster with replicant node", func() {
+		It("deploy cluster", func() {
 			By("creating EMQX cluster")
 			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/emqx.yaml")
 			_, err := utils.Run(cmd)
@@ -249,8 +235,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			verifyReplicantStatus(replicantReplicas)
 		})
 
-		It("scale EMQX cluster with replicant node", func() {
-			By("scaling up EMQX cluster")
+		It("scale cluster up", func() {
 			coreReplicas = 2
 			replicantReplicas = 3
 			changingTime := metav1.Now()
@@ -274,7 +259,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			verifyReplicantStatus(replicantReplicas)
 		})
 
-		It("change EMQX image for target blue-green update", func() {
+		It("change image for target blue-green update", func() {
 			By("creating MQTTX client")
 			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/files/resources/mqttx.yaml")
 			_, err := utils.Run(cmd)
@@ -351,8 +336,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 				To(Succeed(), "Failed to delete MQTTX workload")
 		})
 
-		It("delete EMQX cluster with replicant node", func() {
-			By("deleting EMQX cluster")
+		It("delete cluster", func() {
 			cmd := exec.Command("kubectl", "delete", "emqx", "emqx")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to delete emqx cluster")
@@ -364,7 +348,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 		})
 	})
 
-	Context("EMQX Core-Replicant Cluster / DS Enabled", func() {
+	Context("EMQX Core-Replicant DS-Enabled Cluster", func() {
 		var coreReplicas int = 2
 		var replicantReplicas int = 2
 

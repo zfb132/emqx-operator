@@ -15842,10 +15842,8 @@ spec:
                 type: object
               revisionHistoryLimit:
                 default: 3
-                description: |-
-                  The number of old ReplicaSets, old StatefulSet and old PersistentVolumeClaim to retain to allow rollback.
-                  This is a pointer to distinguish between explicit zero and not specified.
-                  Defaults to 3.
+                description: The number of old ReplicaSets, old StatefulSet and old
+                  PersistentVolumeClaim to retain to allow rollback.
                 format: int32
                 type: integer
               serviceAccountName:
@@ -15984,12 +15982,6 @@ spec:
                         field means the number of MQTT session count,
                       format: int64
                       type: integer
-                    controllerUID:
-                      description: |-
-                        UID is a type that holds unique ID values, including UUIDs.  Because we
-                        don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                        intent and helps make sure that UIDs and names do not get conflated.
-                      type: string
                     live_connections:
                       description: |-
                         In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.
@@ -16006,12 +15998,6 @@ spec:
                       description: 'Erlang/OTP version used by EMQX, example: 24.2/12.2'
                       type: string
                     podName:
-                      type: string
-                    podUID:
-                      description: |-
-                        UID is a type that holds unique ID values, including UUIDs.  Because we
-                        don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                        intent and helps make sure that UIDs and names do not get conflated.
                       type: string
                     role:
                       description: 'EMQX cluster node role, enum: "core" "replicant"'
@@ -16128,12 +16114,6 @@ spec:
                         field means the number of MQTT session count,
                       format: int64
                       type: integer
-                    controllerUID:
-                      description: |-
-                        UID is a type that holds unique ID values, including UUIDs.  Because we
-                        don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                        intent and helps make sure that UIDs and names do not get conflated.
-                      type: string
                     live_connections:
                       description: |-
                         In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.
@@ -16150,12 +16130,6 @@ spec:
                       description: 'Erlang/OTP version used by EMQX, example: 24.2/12.2'
                       type: string
                     podName:
-                      type: string
-                    podUID:
-                      description: |-
-                        UID is a type that holds unique ID values, including UUIDs.  Because we
-                        don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                        intent and helps make sure that UIDs and names do not get conflated.
                       type: string
                     role:
                       description: 'EMQX cluster node role, enum: "core" "replicant"'
