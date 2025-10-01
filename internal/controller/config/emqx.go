@@ -86,24 +86,6 @@ func (c *Conf) GetNodeCookie() string {
 	return toString(byDefault(c.config.Get("node.cookie"), ""))
 }
 
-func (c *Conf) IsDSEnabled() bool {
-	flag := c.config.Get("durable_sessions.enable")
-	if isTrue(byDefault(flag, false)) {
-		return true
-	}
-	zones := c.config.GetObject("zones")
-	if zones == nil {
-		return false
-	}
-	for zone := range zones {
-		flag = c.config.Get("zones." + zone + ".durable_sessions.enable")
-		if isTrue(byDefault(flag, false)) {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Conf) GetDashboardPortMap() map[string]int {
 	portMap := make(map[string]int)
 	portMap["dashboard"] = 18083 // default port

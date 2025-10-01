@@ -137,14 +137,9 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	}
 
 	// Disallow scaling down the pod that is still a DS replication site.
-	// Only if DS is enabled in the current, most recent EMQX config.
-	// Otherwise, if the user has disabled DS, the data is apparently no longer
-	// needs to be preserved.
-	if r.conf.IsDSEnabled() {
-		dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
-		if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
-			return scaleDownCore{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
-		}
+	dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
+	if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
+		return scaleDownCore{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
 	}
 
 	// Get the node info of the pod to be scaled down.
