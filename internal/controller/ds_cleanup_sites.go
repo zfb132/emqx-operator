@@ -13,23 +13,17 @@ type dsCleanupSites struct {
 }
 
 func (c *dsCleanupSites) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	// If DS cluster state is not loaded, skip the reconciliation.
+	if r.dsCluster == nil {
+		return subResult{}
+	}
+
 	// Instantiate API requester for a node that is part of update StatefulSet.
 	// Required API operation is available only since EMQX 6.0.0.
 	req := r.requester.forOldestCore(r.state, &emqxVersionFilter{instance: instance, prefix: "6."})
 
-	// If there's no suitable EMQX API to query, skip the reconciliation.
-	if req == nil {
-		return subResult{}
-	}
-
-	// If EMQX DS API is not available, skip this reconciliation step.
-	// We need this API to be available to ask it about replication status.
-	cluster, err := api.GetDSCluster(req)
-	if err != nil {
-		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
-	}
-
-	for _, site := range cluster.Sites {
+	lostSites := []string{}
+	for _, site := range r.dsCluster.Sites {
 		if site.Up || (len(site.Shards) > 0) {
 			continue
 		}
@@ -37,9 +31,23 @@ func (c *dsCleanupSites) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX
 		if node != nil {
 			continue
 		}
-		err := api.ForgetDSSite(req, site.ID)
+		lostSites = append(lostSites, site.ID)
+	}
+
+	if len(lostSites) == 0 {
+		return subResult{}
+	}
+
+	// If there's no suitable EMQX API to query, skip the reconciliation.
+	if req == nil {
+		r.log.V(1).Info("skipping DS site cleanup", "reason", "no suitable API", "lostSites", lostSites)
+		return subResult{}
+	}
+
+	for _, site := range lostSites {
+		err := api.ForgetDSSite(req, site)
 		if err != nil {
-			return subResult{err: emperror.Wrapf(err, "failed to forget DS site %s", site.ID)}
+			return subResult{err: emperror.Wrapf(err, "failed to forget DS site %s", site)}
 		}
 	}
 
