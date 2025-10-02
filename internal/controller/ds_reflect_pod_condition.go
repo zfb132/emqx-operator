@@ -13,13 +13,13 @@ type dsReflectPodCondition struct {
 }
 
 func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	// If DS cluster state is not loaded, skip the reconciliation.
+	// If DS cluster state is not loaded, skip the reconciliation step.
 	if r.dsCluster == nil {
 		return subResult{}
 	}
 
 	for _, pod := range r.state.pods {
-		node := u.findNode(instance, pod)
+		node := instance.Status.FindNodeByPodName(pod.Name)
 		if node == nil {
 			continue
 		}
@@ -35,6 +35,11 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 			} else {
 				condition.Status = corev1.ConditionFalse
 			}
+		} else {
+			// No DS site for the node.
+			// This is unlikely to happen, but should be safe to assume the node is not
+			// a DS replication site.
+			condition.Status = corev1.ConditionFalse
 		}
 		existing := util.FindPodCondition(pod, appsv2beta1.DSReplicationSite)
 		if existing == nil || existing.Status != condition.Status {
@@ -46,18 +51,4 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 	}
 
 	return subResult{}
-}
-
-func (u *dsReflectPodCondition) findNode(instance *appsv2beta1.EMQX, pod *corev1.Pod) *appsv2beta1.EMQXNode {
-	for _, node := range instance.Status.CoreNodes {
-		if node.PodName == pod.Name {
-			return &node
-		}
-	}
-	for _, node := range instance.Status.ReplicantNodes {
-		if node.PodName == pod.Name {
-			return &node
-		}
-	}
-	return nil
 }
