@@ -19,14 +19,13 @@ package e2e
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/emqx/emqx-operator/test/utils"
+	"github.com/emqx/emqx-operator/test/util"
 )
 
 var (
@@ -36,19 +35,17 @@ var (
 	// These variables are useful if Prometheus or CertManager is already installed, avoiding
 	// re-installation and conflicts.
 	skipPrometheusInstall = os.Getenv("PROMETHEUS_INSTALL_SKIP") == "true"
+
 	// skipCertManagerInstall = os.Getenv("CERT_MANAGER_INSTALL_SKIP") == "true"
 	skipCertManagerInstall = true
-	// isPrometheusOperatorAlreadyInstalled will be set true when prometheus CRDs be found on the cluster
-	isPrometheusOperatorAlreadyInstalled = false
-	// isCertManagerAlreadyInstalled will be set true when CertManager CRDs be found on the cluster
-	isCertManagerAlreadyInstalled = false
 
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "emqx/emqx-operator:0.0.1"
-
-	timeout, interval time.Duration
 )
+
+var isPrometheusInstalled = false
+var isCertManagerInstalled = false
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
 // temporary environment to validate project changes with the the purposed to be used in CI jobs.
@@ -61,75 +58,97 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	timeout = time.Minute * 5
-	interval = time.Second * 5
+	// Set the default timeout and interval for async assertions
+	SetDefaultEventuallyTimeout(time.Minute * 5)
+	SetDefaultEventuallyPollingInterval(time.Second * 3)
 
-	By("Ensure that Prometheus is enabled")
-	_ = utils.UncommentCode("config/default/kustomization.yaml", "#- ../prometheus", "#")
+	By("ensure Prometheus is enabled")
+	_ = util.UncommentCode("config/default/kustomization.yaml", "#- ../prometheus", "#")
 
-	By("generating files")
-	cmd := exec.Command("make", "generate")
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to run make generate")
+	By("generate files")
+	Expect(util.Run("make", "generate")).To(Succeed())
 
-	By("generating manifests")
-	cmd = exec.Command("make", "manifests")
-	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to run make manifests")
+	By("generate manifests")
+	Expect(util.Run("make", "manifests")).To(Succeed())
 
-	By("building the manager(Operator) image")
-	cmd = exec.Command(
-		"make", "docker-build",
+	By("build emqx-operator docker image")
+	Expect(util.Run("make", "docker-build",
 		fmt.Sprintf("IMG=%s", projectImage),
 		fmt.Sprintf("COVERAGE_ENABLED=%t", true),
-	)
-	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
+	)).To(Succeed())
 
-	// TODO(user): If you want to change the e2e test vendor from Kind, ensure the image is
-	// built and available before running the tests. Also, remove the following block.
-	By("loading the manager(Operator) image on Kind")
-	err = utils.LoadImageToKindClusterWithName(projectImage)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
+	By("load emqx-operator docker image into kind cluster")
+	Expect(util.LoadImageToKindClusterWithName(projectImage)).To(Succeed())
 
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.
 	// To prevent errors when tests run in environments with Prometheus or CertManager already installed,
 	// we check for their presence before execution.
 	// Setup Prometheus and CertManager before the suite if not skipped and if not already installed
 	if !skipPrometheusInstall {
-		By("checking if prometheus is installed already")
-		isPrometheusOperatorAlreadyInstalled = utils.IsPrometheusCRDsInstalled()
-		if !isPrometheusOperatorAlreadyInstalled {
-			_, _ = fmt.Fprintf(GinkgoWriter, "Installing Prometheus Operator...\n")
-			Expect(utils.InstallPrometheusOperator()).To(Succeed(), "Failed to install Prometheus Operator")
+		if !util.IsPrometheusCRDsInstalled() {
+			By("install Prometheus Operator")
+			Expect(util.InstallPrometheusOperator()).To(Succeed())
+			isPrometheusInstalled = true
 		} else {
-			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Prometheus Operator is already installed. Skipping installation...\n")
+			fmt.Fprintf(GinkgoWriter, "WARNING: Prometheus Operator is already installed. Skipping installation...\n")
 		}
 	}
 	if !skipCertManagerInstall {
-		By("checking if cert manager is installed already")
-		isCertManagerAlreadyInstalled = utils.IsCertManagerCRDsInstalled()
-		if !isCertManagerAlreadyInstalled {
-			_, _ = fmt.Fprintf(GinkgoWriter, "Installing CertManager...\n")
-			Expect(utils.InstallCertManager()).To(Succeed(), "Failed to install CertManager")
+		if !util.IsCertManagerCRDsInstalled() {
+			By("install CertManager")
+			Expect(util.InstallCertManager()).To(Succeed())
+			isCertManagerInstalled = true
 		} else {
-			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
+			fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
 		}
 	}
 })
 
 var _ = AfterSuite(func() {
 	// Teardown Prometheus and CertManager after the suite if not skipped and if they were not already installed
-	if !skipPrometheusInstall && !isPrometheusOperatorAlreadyInstalled {
-		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling Prometheus Operator...\n")
-		utils.UninstallPrometheusOperator()
+	if !skipPrometheusInstall && isPrometheusInstalled {
+		By("uninstall Prometheus Operator")
+		util.UninstallPrometheusOperator()
 	}
-	if !skipCertManagerInstall && !isCertManagerAlreadyInstalled {
-		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling CertManager...\n")
-		utils.UninstallCertManager()
+	if !skipCertManagerInstall && isCertManagerInstalled {
+		By("uninstall CertManager")
+		util.UninstallCertManager()
 	}
 })
 
-func EventuallySoon(actualOrCtx interface{}, args ...interface{}) AsyncAssertion {
-	return EventuallyWithOffset(1, actualOrCtx, args...).WithTimeout(timeout).WithPolling(interval)
+func PrintDiagnosticReport(namespace string) {
+	controllerLogs, err := util.KubectlOut("logs",
+		"--selector", "control-plane=controller-manager",
+		"--namespace", namespace)
+	if err == nil {
+		GinkgoWriter.Print("Controller logs:\n", controllerLogs)
+	} else {
+		GinkgoWriter.Printf("Failed to get Controller logs: %s", err)
+	}
+	resources, err := util.KubectlOut("get", "all",
+		"--selector", "apps.emqx.io/managed-by=emqx-operator")
+	if err == nil {
+		GinkgoWriter.Print("Managed EMQX resources:\n", resources)
+	} else {
+		GinkgoWriter.Printf("Failed to list managed resources: %s", err)
+	}
+	emqxCR, err := util.KubectlOut("get", "emqx", "emqx", "--output", "yaml")
+	if err == nil {
+		GinkgoWriter.Print("EMQX CR:\n", emqxCR)
+	} else {
+		GinkgoWriter.Printf("Failed to get EMQX CR: %s", err)
+	}
+	emqxLogs, err := util.KubectlOut("logs",
+		"--selector", "apps.emqx.io/instance=emqx,apps.emqx.io/managed-by=emqx-operator")
+	if err == nil {
+		GinkgoWriter.Print("EMQX logs:\n", emqxLogs)
+	} else {
+		GinkgoWriter.Printf("Failed to get EMQX logs: %s", err)
+	}
+	eventsOutput, err := util.KubectlOut("get", "events", "--sort-by=.lastTimestamp")
+	if err == nil {
+		GinkgoWriter.Print("Kubernetes events:\n", eventsOutput)
+	} else {
+		GinkgoWriter.Printf("Failed to get Kubernetes events: %s", err)
+	}
 }
