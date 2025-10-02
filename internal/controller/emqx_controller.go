@@ -31,6 +31,7 @@ import (
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +50,9 @@ type reconcileRound struct {
 	requester apiRequester
 	// Populated by loadState reconciler:
 	state *reconcileState
+	// Populated by dsLoadClusterState reconciler:
+	dsCluster     *api.DSCluster
+	dsReplication *api.DSReplicationStatus
 }
 
 // Instantiate default API requester for a core node.
@@ -118,7 +122,7 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		&loadState{r},
 		// Setup secrets with bootstrap API keys / node cookie:
 		&addBootstrap{r},
-		// Instantiate API requester for the current round:
+		// Set up API requester builder for the current round:
 		&setupAPIRequester{r},
 		// Perform reconciliation steps:
 		&updateStatus{r},
@@ -129,6 +133,7 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		&addReplicantSet{r},
 		&addPdb{r},
 		&addService{r},
+		&dsLoadClusterState{r},
 		&dsUpdateReplicaSets{r},
 		&dsReflectPodCondition{r},
 		&syncReplicantSets{r},

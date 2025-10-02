@@ -4,7 +4,6 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
-	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -14,19 +13,9 @@ type dsReflectPodCondition struct {
 }
 
 func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	// Instantiate API requester for a node that is part of update StatefulSet.
-	req := r.requester.forOldestCore(r.state, &managedByFilter{r.state.updateCoreSet(instance)})
-
-	// If there's no EMQX API to query, skip the reconciliation.
-	if req == nil {
+	// If DS cluster state is not loaded, skip the reconciliation.
+	if r.dsCluster == nil {
 		return subResult{}
-	}
-
-	// If EMQX DS API is not available, skip this reconciliation step.
-	// We need this API to be available to ask it about replication status.
-	cluster, err := api.GetDSCluster(req)
-	if err != nil {
-		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
 	}
 
 	for _, pod := range r.state.pods {
@@ -39,7 +28,7 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 			Status:             corev1.ConditionUnknown,
 			LastTransitionTime: metav1.Now(),
 		}
-		site := cluster.FindSite(node.Node)
+		site := r.dsCluster.FindSite(node.Node)
 		if site != nil {
 			if len(site.Shards) > 0 {
 				condition.Status = corev1.ConditionTrue
