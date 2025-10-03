@@ -90,7 +90,7 @@ var _ = BeforeSuite(func() {
 			Expect(util.InstallPrometheusOperator()).To(Succeed())
 			isPrometheusInstalled = true
 		} else {
-			fmt.Fprintf(GinkgoWriter, "WARNING: Prometheus Operator is already installed. Skipping installation...\n")
+			GinkgoWriter.Println("WARNING: Prometheus Operator is already installed, skipping installation.")
 		}
 	}
 	if !skipCertManagerInstall {
@@ -99,7 +99,7 @@ var _ = BeforeSuite(func() {
 			Expect(util.InstallCertManager()).To(Succeed())
 			isCertManagerInstalled = true
 		} else {
-			fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
+			GinkgoWriter.Println("WARNING: CertManager is already installed, skipping installation.")
 		}
 	}
 })

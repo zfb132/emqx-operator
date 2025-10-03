@@ -147,7 +147,7 @@ func HaveRebalanceCondition(
 	return WithTransform(
 		func(s appsv2beta1.RebalanceStatus) *appsv2beta1.RebalanceCondition {
 			for _, c := range s.Conditions {
-				if c.Type == appsv2beta1.RebalanceConditionType(conditionType) {
+				if c.Type == conditionType {
 					return &c
 				}
 			}

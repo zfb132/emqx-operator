@@ -22,9 +22,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -37,50 +40,93 @@ const (
 )
 
 func warnError(err error) {
-	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+	GinkgoWriter.Printf("warning: %v\n", err)
 }
 
 // Kubectl runs a kubectl command, and returns an error if the command fails.
 func Kubectl(args ...string) error {
-	_, err := run(exec.Command("kubectl", args...))
+	_, err := run(exec.Command("kubectl", args...), nil)
+	return err
+}
+
+func KubectlStdin(stdin []byte, args ...string) error {
+	cmd := exec.Command("kubectl", args...)
+	_, err := run(cmd, stdin)
 	return err
 }
 
 // KubectlOut runs a kubectl command, and returns the output of the command.
 func KubectlOut(args ...string) (string, error) {
-	return run(exec.Command("kubectl", args...))
+	return run(exec.Command("kubectl", args...), nil)
 }
 
 // Run executes the provided command within this context
 func Run(executable string, args ...string) error {
 	cmd := exec.Command(executable, args...)
-	_, err := run(cmd)
+	_, err := run(cmd, nil)
 	return err
 }
 
 // Output executes the provided command within this context, and returns the output of the command.
 func Output(executable string, args ...string) (string, error) {
-	return run(exec.Command(executable, args...))
+	return run(exec.Command(executable, args...), nil)
 }
 
 // Run executes the provided command within this context
-func run(cmd *exec.Cmd) (string, error) {
+func run(cmd *exec.Cmd, stdin []byte) (string, error) {
 	dir, _ := GetProjectDir()
 	cmd.Dir = dir
 
 	if err := os.Chdir(cmd.Dir); err != nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %s\n", err)
+		warnError(err)
 	}
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
-	_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
+	GinkgoWriter.Print("running: ", command)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+		GinkgoWriter.Print(" < ", string(stdin))
+	}
+	GinkgoWriter.Println()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("%s failed with error: (%v) %s", command, err, string(output))
 	}
 
 	return string(output), nil
+}
+
+func FromYAMLFile(filePath string) []byte {
+	document, err := os.ReadFile(filePath)
+	if err != nil {
+		panic(err)
+	}
+	return FromYAML(document)
+}
+
+func FromYAML(document []byte) []byte {
+	json, err := yaml.YAMLToJSON(document)
+	if err != nil {
+		panic(err)
+	}
+	return json
+}
+
+func PatchDocument(document []byte, patches ...[]byte) []byte {
+	var err error
+	var patched []byte
+	if len(patches) == 0 {
+		return slices.Clone(document)
+	}
+	patched = document
+	for _, p := range patches {
+		patched, err = jsonpatch.MergePatch(patched, p)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return patched
 }
 
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.

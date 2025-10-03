@@ -12,6 +12,45 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	emqxCRBasic      = "test/e2e/files/resources/emqx.yaml"
+	emqxImage        = "emqx/emqx:5.10.0"
+	emqxImageUpgrade = "emqx/emqx:5.10.1"
+)
+
+func withCores(numReplicas int) []byte {
+	return fmt.Appendf(nil,
+		`{"spec": {"coreTemplate": {"spec": {"replicas": %d}}}}`,
+		numReplicas,
+	)
+}
+
+func withReplicants(numReplicas int) []byte {
+	return fmt.Appendf(nil,
+		`{"spec": {"replicantTemplate": {"spec": {"replicas": %d}}}}`,
+		numReplicas,
+	)
+}
+
+func withImage(image string) []byte {
+	return fmt.Appendf(nil, `{"spec": {"image": "%s"}}`, image)
+}
+
+func withDS() []byte {
+	return FromYAML([]byte(`
+spec:
+  config:
+    data: |
+      license { key = "evaluation" }
+      durable_sessions { enable = true }
+      durable_storage { 
+        messages {
+          backend = builtin_raft
+          n_shards = 8
+        }
+      }`))
+}
+
 var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 
 	BeforeAll(func() {
@@ -55,7 +94,14 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 		var coreReplicas int = 2
 
 		It("deploy cluster", func() {
-			Expect(Kubectl("apply", "-f", "test/e2e/files/resources/emqx.yaml")).To(Succeed())
+			By("create EMQX cluster")
+			emqxCR := PatchDocument(
+				FromYAMLFile(emqxCRBasic),
+				withImage(emqxImage),
+				withCores(coreReplicas),
+			)
+			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
+			By("wait for EMQX cluster to be ready")
 			Eventually(checkEMQXReady).Should(Succeed())
 			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
 			checkNoReplicants(Default)
@@ -97,7 +143,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			changedAt := metav1.Now()
 			Expect(Kubectl("patch", "emqx", "emqx",
 				"--type", "json",
-				"--patch", `[{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:5.10.1"}]`)).
+				"--patch", `[{"op": "replace", "path": "/spec/image", "value": "`+emqxImageUpgrade+`"}]`)).
 				To(Succeed())
 
 			By("check EMQX cluster node evacuations status")
@@ -128,7 +174,13 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 
 		It("deploy cluster", func() {
 			By("create EMQX cluster")
-			Expect(Kubectl("apply", "-f", "test/e2e/files/resources/emqx-replicant.yaml")).To(Succeed())
+			emqxCR := PatchDocument(
+				FromYAMLFile(emqxCRBasic),
+				withImage(emqxImage),
+				withCores(coreReplicas),
+				withReplicants(replicantReplicas),
+			)
+			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
 			By("wait for EMQX cluster to be ready")
 			Eventually(checkEMQXReady).Should(Succeed())
 			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
@@ -189,7 +241,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			changingTime := metav1.Now()
 			Expect(Kubectl("patch", "emqx", "emqx",
 				"--type", "json",
-				"--patch", `[{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:5.10.1"}]`,
+				"--patch", `[{"op": "replace", "path": "/spec/image", "value": "`+emqxImageUpgrade+`"}]`,
 			)).To(Succeed())
 
 			By("check EMQX cluster node evacuations status")
@@ -226,13 +278,21 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 
 		It("deploy core-replicant EMQX cluster", func() {
 			By("create EMQX cluster")
-			Expect(Kubectl("apply", "-f", "test/e2e/files/resources/emqx-ds.yaml")).To(Succeed())
+			emqxCR := PatchDocument(
+				FromYAMLFile(emqxCRBasic),
+				withImage(emqxImage),
+				withCores(coreReplicas),
+				withReplicants(replicantReplicas),
+				withDS(),
+			)
+			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
 
 			By("wait for EMQX cluster to be ready")
 			Eventually(checkEMQXReady).Should(Succeed())
 			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
 			Eventually(checkReplicantStatus).WithArguments(replicantReplicas).Should(Succeed())
 			Eventually(checkDSReplicationStatus).WithArguments(coreReplicas).Should(Succeed())
+			Eventually(checkDSReplicationHealthy).Should(Succeed())
 
 			By("verify EMQX pods have relevant conditions")
 			var pods corev1.PodList
@@ -270,6 +330,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
 			Eventually(checkReplicantStatus).WithArguments(replicantReplicas).Should(Succeed())
 			Eventually(checkDSReplicationStatus).WithArguments(coreReplicas).Should(Succeed())
+			Eventually(checkDSReplicationHealthy).Should(Succeed())
 		})
 
 		It("scale down core EMQX cluster", func() {
@@ -285,6 +346,8 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
 			Eventually(checkReplicantStatus).WithArguments(replicantReplicas).Should(Succeed())
 			Eventually(checkDSReplicationStatus).WithArguments(coreReplicas).Should(Succeed())
+			// EMQX 5.10.1: Lost sites are expected to hang around.
+			// Eventually(checkDSReplicationHealthy).Should(Succeed())
 		})
 
 		It("perform a blue-green update", func() {
@@ -303,7 +366,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 			Expect(Kubectl("patch", "emqx", "emqx",
 				"--type", "json",
 				"--patch", `[
-					{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:5.10.1"},
+					{"op": "replace", "path": "/spec/image", "value": "`+emqxImageUpgrade+`"},
 					{"op": "replace", "path": "/spec/coreTemplate/spec/replicas", "value": 2}
 				]`,
 			)).To(Succeed())
@@ -324,6 +387,8 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 
 			By("wait for DS replication status to be stable")
 			Eventually(checkDSReplicationStatus).WithArguments(coreReplicas).Should(Succeed())
+			// EMQX 5.10.1: Lost sites are expected to hang around.
+			// Eventually(checkDSReplicationHealthy).Should(Succeed())
 		})
 
 		It("delete core-replicant EMQX cluster", func() {

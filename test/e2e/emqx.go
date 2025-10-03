@@ -118,6 +118,9 @@ func checkDSReplicationStatus(g Gomega, coreReplicas int) {
 		)),
 		"EMQX DS databases are not replicated correctly across %d core nodes", coreReplicas,
 	)
+}
+
+func checkDSReplicationHealthy(g Gomega) {
 	g.Expect(KubectlOut("exec", "service/emqx-listeners", "--", "emqx", "ctl", "ds", "info")).
 		NotTo(
 			ContainSubstring("(!)"),
