@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+//nolint:errcheck
 var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 	BeforeAll(func() {
 		By("create manager namespace")
@@ -51,7 +52,7 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 	It("No EMQX exists", func() {
 		By("create Rebalance CR")
 		Expect(Kubectl("apply", "-f", "test/e2e/files/resources/rebalance.yaml")).To(Succeed())
-		DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/rebalance.yaml")
+		defer Kubectl("delete", "-f", "test/e2e/files/resources/rebalance.yaml")
 		By("wait for Rebalance to be failed")
 		Eventually(RebalanceStatus).Should(
 			And(
@@ -68,14 +69,14 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 	It("EMQX exists / nothing to rebalance", func() {
 		By("create EMQX CR")
 		Expect(Kubectl("apply", "-f", "test/e2e/files/resources/emqx.yaml")).To(Succeed())
-		DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/emqx.yaml")
+		defer Kubectl("delete", "-f", "test/e2e/files/resources/emqx.yaml")
 		By("wait for EMQX to be ready")
 		Eventually(checkEMQXReady).Should(Succeed())
 
 		By("create Rebalance CR")
 		Expect(Kubectl("apply", "-f", "test/e2e/files/resources/rebalance.yaml")).
 			To(Succeed(), "Failed to apply resources/rebalance.yaml")
-		DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/rebalance.yaml")
+		defer Kubectl("delete", "-f", "test/e2e/files/resources/rebalance.yaml")
 
 		By("wait for Rebalance to become failed")
 		Eventually(RebalanceStatus).Should(And(
@@ -91,12 +92,12 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 	It("EMQX exists / connections should be rebalanced", func() {
 		By("create EMQX CR")
 		Expect(Kubectl("apply", "-f", "test/e2e/files/resources/emqx.yaml")).To(Succeed())
-		DeferCleanup(Kubectl, "delete", "emqx", "emqx")
+		defer Kubectl("delete", "emqx", "emqx")
 		Eventually(checkEMQXReady).Should(Succeed())
 
 		By("create MQTTX client workload")
 		Expect(Kubectl("apply", "-f", "test/e2e/files/resources/mqttx.yaml")).To(Succeed())
-		DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/mqttx.yaml")
+		defer Kubectl("delete", "-f", "test/e2e/files/resources/mqttx.yaml")
 		Expect(Kubectl("wait", "pod",
 			"--selector=app=mqttx",
 			"--for=condition=Ready",
@@ -115,7 +116,7 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 
 		By("create Rebalance CR")
 		Expect(Kubectl("apply", "-f", "test/e2e/files/resources/rebalance.yaml")).To(Succeed())
-		DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/rebalance.yaml")
+		defer Kubectl("delete", "-f", "test/e2e/files/resources/rebalance.yaml")
 
 		By("check Rebalance CR state")
 		Eventually(RebalanceStatus).Should(And(

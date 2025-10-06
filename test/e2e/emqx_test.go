@@ -51,6 +51,7 @@ spec:
       }`))
 }
 
+//nolint:errcheck
 var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 
 	BeforeAll(func() {
@@ -122,7 +123,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 		It("change image to trigger blue-green update", func() {
 			By("create MQTTX client")
 			Expect(Kubectl("apply", "-f", "test/e2e/files/resources/mqttx.yaml")).To(Succeed())
-			DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/mqttx.yaml")
+			defer Kubectl("delete", "-f", "test/e2e/files/resources/mqttx.yaml")
 			Expect(Kubectl("wait", "pod",
 				"--selector=app=mqttx",
 				"--for=condition=Ready",
@@ -210,7 +211,7 @@ var _ = Describe("E2E Test", Label("base"), Ordered, func() {
 		It("change image for target blue-green update", func() {
 			By("create MQTTX client")
 			Expect(Kubectl("apply", "-f", "test/e2e/files/resources/mqttx.yaml")).To(Succeed())
-			DeferCleanup(Kubectl, "delete", "-f", "test/e2e/files/resources/mqttx.yaml")
+			defer Kubectl("delete", "-f", "test/e2e/files/resources/mqttx.yaml")
 			Expect(Kubectl("wait", "pod",
 				"--selector=app=mqttx",
 				"--for=condition=Ready",
