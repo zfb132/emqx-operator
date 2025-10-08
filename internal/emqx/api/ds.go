@@ -164,3 +164,9 @@ func UpdateDSReplicaSet(requester req.RequesterInterface, db string, sites []str
 	_, err := request(requester, "PUT", path, body, nil)
 	return err
 }
+
+func ForgetDSSite(requester req.RequesterInterface, site string) error {
+	path := fmt.Sprintf("api/v5/ds/sites/%s/forget", site)
+	_, err := request(requester, "PUT", path, nil, nil)
+	return err
+}

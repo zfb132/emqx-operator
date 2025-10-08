@@ -4,8 +4,6 @@ import (
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
-	"github.com/emqx/emqx-operator/internal/emqx/api"
-	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -15,22 +13,13 @@ type dsReflectPodCondition struct {
 }
 
 func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	// If there's no EMQX API to query, skip the reconciliation.
-	if r.api == nil {
+	// If DS cluster state is not loaded, skip the reconciliation step.
+	if r.dsCluster == nil {
 		return subResult{}
 	}
 
-	req := u.getSuitableRequester(r, instance)
-
-	// If EMQX DS API is not available, skip this reconciliation step.
-	// We need this API to be available to ask it about replication status.
-	cluster, err := api.GetDSCluster(req)
-	if err != nil {
-		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
-	}
-
 	for _, pod := range r.state.pods {
-		node := u.findNode(instance, pod)
+		node := instance.Status.FindNodeByPodName(pod.Name)
 		if node == nil {
 			continue
 		}
@@ -39,13 +28,18 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 			Status:             corev1.ConditionUnknown,
 			LastTransitionTime: metav1.Now(),
 		}
-		site := cluster.FindSite(node.Node)
+		site := r.dsCluster.FindSite(node.Node)
 		if site != nil {
 			if len(site.Shards) > 0 {
 				condition.Status = corev1.ConditionTrue
 			} else {
 				condition.Status = corev1.ConditionFalse
 			}
+		} else {
+			// No DS site for the node.
+			// This is unlikely to happen, but should be safe to assume the node is not
+			// a DS replication site.
+			condition.Status = corev1.ConditionFalse
 		}
 		existing := util.FindPodCondition(pod, appsv2beta1.DSReplicationSite)
 		if existing == nil || existing.Status != condition.Status {
@@ -57,37 +51,4 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 	}
 
 	return subResult{}
-}
-
-func (u *dsReflectPodCondition) findNode(instance *appsv2beta1.EMQX, pod *corev1.Pod) *appsv2beta1.EMQXNode {
-	for _, node := range instance.Status.CoreNodes {
-		if node.PodName == pod.Name {
-			return &node
-		}
-	}
-	for _, node := range instance.Status.ReplicantNodes {
-		if node.PodName == pod.Name {
-			return &node
-		}
-	}
-	return nil
-}
-
-func (u *dsReflectPodCondition) getSuitableRequester(
-	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
-) req.RequesterInterface {
-	// Prefer node that is part of "update" StatefulSet (if any).
-	corePods := r.state.podsWithRole("core")
-	sortByCreationTimestamp(corePods)
-	for _, pod := range corePods {
-		if r.state.partOfUpdateSet(pod, instance) {
-			ready := util.FindPodCondition(pod, corev1.ContainersReady)
-			if ready != nil && ready.Status == corev1.ConditionTrue {
-				return r.api.SwitchHost(pod.Status.PodIP, pod.Name)
-			}
-		}
-	}
-	// If no suitable pod found, return the original requester.
-	return r.api
 }

@@ -120,7 +120,7 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	}
 
 	// List the pods managed by the current coreSet.
-	pods := r.state.podsManagedBy(current.UID)
+	pods := r.state.podsManagedBy(current)
 	sortByName(pods)
 
 	// No more pods, no need to scale down.
@@ -137,14 +137,9 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	}
 
 	// Disallow scaling down the pod that is still a DS replication site.
-	// Only if DS is enabled in the current, most recent EMQX config.
-	// Otherwise, if the user has disabled DS, the data is apparently no longer
-	// needs to be preserved.
-	if r.conf.IsDSEnabled() {
-		dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
-		if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
-			return scaleDownCore{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
-		}
+	dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
+	if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
+		return scaleDownCore{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
 	}
 
 	// Get the node info of the pod to be scaled down.
@@ -171,7 +166,7 @@ func (s *syncCoreSets) chooseScaleDownCore(
 		if len(migrateTo) == 0 {
 			return scaleDownCore{Reason: fmt.Sprintf("no nodes to migrate %s to", scaleDownNode.Node)}, nil
 		}
-		err := api.StartEvacuation(r.api, strategy, migrateTo, scaleDownNode.Node)
+		err := api.StartEvacuation(r.oldestCoreRequester(), strategy, migrateTo, scaleDownNode.Node)
 		if err != nil {
 			return scaleDownCore{}, emperror.Wrap(err, "failed to start node evacuation")
 		}

@@ -1,0 +1,38 @@
+package controller
+
+import (
+	emperror "emperror.dev/errors"
+	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	"github.com/emqx/emqx-operator/internal/emqx/api"
+)
+
+// Responsibilities:
+// - Load DS cluster info and replication status into the reconcile state.
+type dsLoadClusterState struct {
+	*EMQXReconciler
+}
+
+func (c *dsLoadClusterState) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	// Instantiate API requester for a node that is part of update StatefulSet.
+	req := r.requester.forOldestCore(r.state, &managedByFilter{r.state.updateCoreSet(instance)})
+	// If there's no suitable EMQX API to query, skip the reconciliation.
+	if req == nil {
+		return subResult{}
+	}
+
+	// If EMQX DS API is not available, fail the reconciliation.
+	cluster, err := api.GetDSCluster(req)
+	if err != nil {
+		return subResult{err: emperror.Wrap(err, "failed to fetch DS cluster status")}
+	}
+
+	// Fetch the DS replication status.
+	replication, err := api.GetDSReplicationStatus(req)
+	if err != nil {
+		return subResult{err: emperror.Wrap(err, "failed to fetch DS replication status")}
+	}
+
+	r.dsCluster = &cluster
+	r.dsReplication = &replication
+	return subResult{}
+}

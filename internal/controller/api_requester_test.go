@@ -1,0 +1,152 @@
+package controller
+
+import (
+	"testing"
+	"time"
+
+	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	req "github.com/emqx/emqx-operator/internal/requester"
+	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
+)
+
+func TestRequesterFilter(t *testing.T) {
+	var coreSetName string = "emqx-core-cur"
+	var coreSetUID types.UID = "123"
+
+	instance := &appsv2beta1.EMQX{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "emqx",
+			Namespace: "emqx",
+		},
+		Status: appsv2beta1.EMQXStatus{
+			CoreNodesStatus: appsv2beta1.EMQXNodesStatus{
+				Replicas:        2,
+				CurrentRevision: "cur",
+				UpdateRevision:  "upd",
+			},
+			ReplicantNodesStatus: appsv2beta1.EMQXNodesStatus{
+				Replicas:        0,
+				CurrentRevision: "cur",
+				UpdateRevision:  "upd",
+			},
+			CoreNodes: []appsv2beta1.EMQXNode{
+				{
+					PodName:     coreSetName + "-0",
+					Node:        "emqx@core-0",
+					NodeStatus:  "running",
+					OTPRelease:  "27.2-3/15.2",
+					Version:     "5.10.0",
+					Role:        "core",
+					Session:     0,
+					Connections: 0,
+					Uptime:      0,
+				},
+				{
+					PodName:     coreSetName + "-1",
+					Node:        "emqx@core-1",
+					NodeStatus:  "running",
+					OTPRelease:  "27.2-3/15.2",
+					Version:     "5.10.0",
+					Role:        "core",
+					Session:     0,
+					Connections: 0,
+					Uptime:      0,
+				},
+			},
+			ReplicantNodes: []appsv2beta1.EMQXNode{},
+		},
+	}
+
+	coreLabels := map[string]string{
+		appsv2beta1.LabelsDBRoleKey: "core",
+	}
+	coreOwnerReference := metav1.OwnerReference{
+		APIVersion: "apps/v1",
+		Kind:       "StatefulSet",
+		Name:       coreSetName,
+		UID:        coreSetUID,
+		Controller: ptr.To(true),
+	}
+
+	state := &reconcileState{
+		coreSets: []*appsv1.StatefulSet{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   coreSetName,
+					UID:    coreSetUID,
+					Labels: map[string]string{appsv2beta1.LabelsPodTemplateHashKey: "cur"},
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas: 2,
+				},
+			},
+		},
+		replicantSets: []*appsv1.ReplicaSet{},
+		pods: []*corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              coreSetName + "-0",
+					Labels:            coreLabels,
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+					OwnerReferences:   []metav1.OwnerReference{coreOwnerReference},
+				},
+				Status: corev1.PodStatus{
+					PodIP:      "10.0.0.1",
+					Phase:      corev1.PodPending,
+					Conditions: []corev1.PodCondition{},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              coreSetName + "-1",
+					Labels:            coreLabels,
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Second)),
+					OwnerReferences:   []metav1.OwnerReference{coreOwnerReference},
+				},
+				Status: corev1.PodStatus{
+					PodIP:      "10.0.0.2",
+					Phase:      corev1.PodRunning,
+					Conditions: []corev1.PodCondition{{Type: corev1.ContainersReady, Status: corev1.ConditionTrue}},
+				},
+			},
+		},
+	}
+
+	builder := &apiRequesterBuilder{
+		schema:   "http",
+		port:     "1883",
+		username: "emqx",
+		password: "emqx",
+	}
+
+	var requester req.RequesterInterface
+
+	requester = builder.forOldestCore(state)
+	assert.NotNil(t, requester)
+	assert.Equal(t, state.pods[1].Name, requester.GetDescription())
+
+	requester = builder.forPod(state.pods[0])
+	assert.Nil(t, requester)
+
+	requester = builder.forPod(state.pods[1])
+	assert.NotNil(t, requester)
+
+	requester = builder.forOldestCore(state, &managedByFilter{state.currentCoreSet(instance)})
+	assert.NotNil(t, requester)
+	assert.Equal(t, state.pods[1].Name, requester.GetDescription())
+
+	requester = builder.forOldestCore(state, &managedByFilter{state.updateCoreSet(instance)})
+	assert.Nil(t, requester)
+
+	requester = builder.forOldestCore(state, &emqxVersionFilter{instance, "5.10."})
+	assert.NotNil(t, requester)
+
+	requester = builder.forOldestCore(state, &emqxVersionFilter{instance, "6."})
+	assert.Nil(t, requester)
+
+}

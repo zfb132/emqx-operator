@@ -3,7 +3,8 @@ kind: EMQX
 metadata:
   name: emqx
 spec:
-  image: emqx/emqx:latest
+  image: emqx/emqx:5.10.0
+  imagePullPolicy: Always
   config:
     data: |
       license { key = "evaluation" }

@@ -83,10 +83,37 @@ type EMQXNode struct {
 	// In EMQX's API of `/api/v5/nodes`, the `connections` field means the number of MQTT session count,
 	Session int64 `json:"connections,omitempty"`
 	// In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.
-	// THe `live_connections` just work in EMQX 5.1 or later.
 	Connections int64 `json:"live_connections,omitempty"`
 	// EMQX node uptime, milliseconds
 	Uptime int64 `json:"-"`
+}
+
+func (s EMQXStatus) FindNode(node string) *EMQXNode {
+	for _, n := range s.CoreNodes {
+		if n.Node == node {
+			return &n
+		}
+	}
+	for _, n := range s.ReplicantNodes {
+		if n.Node == node {
+			return &n
+		}
+	}
+	return nil
+}
+
+func (s EMQXStatus) FindNodeByPodName(pod string) *EMQXNode {
+	for _, n := range s.CoreNodes {
+		if n.PodName == pod {
+			return &n
+		}
+	}
+	for _, n := range s.ReplicantNodes {
+		if n.PodName == pod {
+			return &n
+		}
+	}
+	return nil
 }
 
 // Summary of DS replication status per database.

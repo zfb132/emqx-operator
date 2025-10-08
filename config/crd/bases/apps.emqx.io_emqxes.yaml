@@ -15983,9 +15983,8 @@ spec:
                       format: int64
                       type: integer
                     live_connections:
-                      description: |-
-                        In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.
-                        THe `live_connections` just work in EMQX 5.1 or later.
+                      description: In EMQX's API of `/api/v5/nodes`, the `live_connections`
+                        field means the number of connected MQTT clients.
                       format: int64
                       type: integer
                     node:
@@ -16115,9 +16114,8 @@ spec:
                       format: int64
                       type: integer
                     live_connections:
-                      description: |-
-                        In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.
-                        THe `live_connections` just work in EMQX 5.1 or later.
+                      description: In EMQX's API of `/api/v5/nodes`, the `live_connections`
+                        field means the number of connected MQTT clients.
                       format: int64
                       type: integer
                     node:

@@ -92,44 +92,6 @@ func TestStripReadOnlyConfig(t *testing.T) {
 	})
 }
 
-func TestIsDSEnabled(t *testing.T) {
-	t.Run("empty config", func(t *testing.T) {
-		config, err := EMQXConf("")
-		assert.Nil(t, err)
-		assert.False(t, config.IsDSEnabled())
-	})
-
-	t.Run("non-empty config", func(t *testing.T) {
-		config, err := EMQXConf(`
-		durable_sessions {
-			enable = true
-		}
-		`)
-		assert.Nil(t, err)
-		assert.True(t, config.IsDSEnabled())
-	})
-
-	t.Run("zones config", func(t *testing.T) {
-		config, err := EMQXConf(`
-		zones {
-			zone1 {
-				durable_sessions {
-					enable = true
-				}
-			}
-			zone2 {
-				durable_sessions {
-					enable = false
-				}
-			}
-			zone3 {}
-		}
-		`)
-		assert.Nil(t, err)
-		assert.True(t, config.IsDSEnabled())
-	})
-}
-
 func TestGetDashboardPortMap(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
 		config, err := EMQXConf("")

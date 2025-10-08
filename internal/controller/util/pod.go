@@ -19,6 +19,11 @@ func FindPodCondition(pod *corev1.Pod, conditionType corev1.PodConditionType) *c
 	return nil
 }
 
+func IsPodConditionTrue(pod *corev1.Pod, conditionType corev1.PodConditionType) bool {
+	condition := FindPodCondition(pod, conditionType)
+	return condition != nil && condition.Status == corev1.ConditionTrue
+}
+
 func SwitchPodConditionStatus(condition *corev1.PodCondition, status corev1.ConditionStatus) {
 	if condition.Status != status {
 		condition.Status = status

@@ -86,7 +86,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
 		// Ignore if number of replicas has changed.
-		// SyncPods reconciler will handle scaling up and down of the existing statefulSet.
+		// Reconciler `syncCoreSets` will handle scaling up and down of the existing statefulSet.
 		ignoreStatefulSetReplicas(),
 	)
 	if !patchResult.IsEmpty() {

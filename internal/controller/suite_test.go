@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -162,12 +163,24 @@ func newReconcileRound() *reconcileRound {
 	return newReconcileRoundWithRequester(req)
 }
 
-func newReconcileRoundWithRequester(api req.RequesterInterface) *reconcileRound {
+func newReconcileRoundWithRequester(requester req.RequesterInterface) *reconcileRound {
 	return &reconcileRound{
-		ctx:   ctx,
-		log:   logger,
-		conf:  emqxConf,
-		api:   api,
-		state: &reconcileState{},
+		ctx:       ctx,
+		log:       logger,
+		conf:      emqxConf,
+		requester: &apiRequesterOverride{requester},
+		state:     &reconcileState{},
 	}
+}
+
+type apiRequesterOverride struct {
+	requester req.RequesterInterface
+}
+
+func (b *apiRequesterOverride) forOldestCore(_ *reconcileState, _ ...podRequesterFilter) req.RequesterInterface {
+	return b.requester
+}
+
+func (b *apiRequesterOverride) forPod(_ *corev1.Pod) req.RequesterInterface {
+	return b.requester
 }

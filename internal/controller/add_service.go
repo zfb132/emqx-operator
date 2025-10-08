@@ -17,7 +17,8 @@ type addService struct {
 }
 
 func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	if r.api == nil {
+	req := r.oldestCoreRequester()
+	if req == nil {
 		return subResult{}
 	}
 
@@ -25,7 +26,7 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		return subResult{}
 	}
 
-	configStr, err := api.Configs(r.api)
+	configStr, err := api.Configs(req)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to get emqx configs by api")}
 	}

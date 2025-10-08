@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package utils
+package util
 
 import (
 	"bufio"
@@ -22,9 +22,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -37,21 +40,55 @@ const (
 )
 
 func warnError(err error) {
-	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+	GinkgoWriter.Printf("warning: %v\n", err)
+}
+
+// Kubectl runs a kubectl command, and returns an error if the command fails.
+func Kubectl(args ...string) error {
+	_, err := run(exec.Command("kubectl", args...), nil)
+	return err
+}
+
+func KubectlStdin(stdin []byte, args ...string) error {
+	cmd := exec.Command("kubectl", args...)
+	_, err := run(cmd, stdin)
+	return err
+}
+
+// KubectlOut runs a kubectl command, and returns the output of the command.
+func KubectlOut(args ...string) (string, error) {
+	return run(exec.Command("kubectl", args...), nil)
 }
 
 // Run executes the provided command within this context
-func Run(cmd *exec.Cmd) (string, error) {
+func Run(executable string, args ...string) error {
+	cmd := exec.Command(executable, args...)
+	_, err := run(cmd, nil)
+	return err
+}
+
+// Output executes the provided command within this context, and returns the output of the command.
+func Output(executable string, args ...string) (string, error) {
+	return run(exec.Command(executable, args...), nil)
+}
+
+// Run executes the provided command within this context
+func run(cmd *exec.Cmd, stdin []byte) (string, error) {
 	dir, _ := GetProjectDir()
 	cmd.Dir = dir
 
 	if err := os.Chdir(cmd.Dir); err != nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %s\n", err)
+		warnError(err)
 	}
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
-	_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
+	GinkgoWriter.Print("running: ", command)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+		GinkgoWriter.Print(" < ", string(stdin))
+	}
+	GinkgoWriter.Println()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("%s failed with error: (%v) %s", command, err, string(output))
@@ -60,19 +97,49 @@ func Run(cmd *exec.Cmd) (string, error) {
 	return string(output), nil
 }
 
+func FromYAMLFile(filePath string) []byte {
+	document, err := os.ReadFile(filePath)
+	if err != nil {
+		panic(err)
+	}
+	return FromYAML(document)
+}
+
+func FromYAML(document []byte) []byte {
+	json, err := yaml.YAMLToJSON(document)
+	if err != nil {
+		panic(err)
+	}
+	return json
+}
+
+func PatchDocument(document []byte, patches ...[]byte) []byte {
+	var err error
+	var patched []byte
+	if len(patches) == 0 {
+		return slices.Clone(document)
+	}
+	patched = document
+	for _, p := range patches {
+		patched, err = jsonpatch.MergePatch(patched, p)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return patched
+}
+
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.
 func InstallPrometheusOperator() error {
 	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "create", "-f", url)
-	_, err := Run(cmd)
-	return err
+	return Kubectl("create", "-f", url)
 }
 
 // UninstallPrometheusOperator uninstalls the prometheus
 func UninstallPrometheusOperator() {
 	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
+	err := Kubectl("delete", "-f", url)
+	if err != nil {
 		warnError(err)
 	}
 }
@@ -87,8 +154,7 @@ func IsPrometheusCRDsInstalled() bool {
 		"prometheusagents.monitoring.coreos.com",
 	}
 
-	cmd := exec.Command("kubectl", "get", "crds", "-o", "custom-columns=NAME:.metadata.name")
-	output, err := Run(cmd)
+	output, err := KubectlOut("get", "crds", "-o", "custom-columns=NAME:.metadata.name")
 	if err != nil {
 		return false
 	}
@@ -107,8 +173,8 @@ func IsPrometheusCRDsInstalled() bool {
 // UninstallCertManager uninstalls the cert manager
 func UninstallCertManager() {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
+	err := Kubectl("delete", "-f", url)
+	if err != nil {
 		warnError(err)
 	}
 }
@@ -116,20 +182,17 @@ func UninstallCertManager() {
 // InstallCertManager installs the cert manager bundle.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
-	if _, err := Run(cmd); err != nil {
+	err := Kubectl("apply", "-f", url)
+	if err != nil {
 		return err
 	}
 	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
 	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
+	return Kubectl("wait", "deployment", "cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
 		"--timeout", "5m",
 	)
-
-	_, err := Run(cmd)
-	return err
 }
 
 // IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed
@@ -146,8 +209,7 @@ func IsCertManagerCRDsInstalled() bool {
 	}
 
 	// Execute the kubectl command to get all CRDs
-	cmd := exec.Command("kubectl", "get", "crds")
-	output, err := Run(cmd)
+	output, err := KubectlOut("get", "crds")
 	if err != nil {
 		return false
 	}
@@ -171,10 +233,7 @@ func LoadImageToKindClusterWithName(name string) error {
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
 		cluster = v
 	}
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	cmd := exec.Command("kind", kindOptions...)
-	_, err := Run(cmd)
-	return err
+	return Run("kind", "load", "docker-image", name, "--name", cluster)
 }
 
 // GetNonEmptyLines converts given command output string into individual objects

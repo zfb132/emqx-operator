@@ -62,13 +62,12 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 
 	// If the annotation is set, and the config is different, update the config.
 	if lastConfStr != instance.Spec.Config.Data {
-		conf := r.conf.Copy()
-
 		if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
 			return subResult{}
 		}
 
 		// Delete readonly configs
+		conf := r.conf.Copy()
 		stripped := conf.StripReadOnlyConfig()
 		if len(stripped) > 0 {
 			s.EventRecorder.Event(
@@ -78,7 +77,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 			)
 		}
 
-		if err := api.UpdateConfigs(r.api, instance.Spec.Config.Mode, conf.Print()); err != nil {
+		if err := api.UpdateConfigs(r.oldestCoreRequester(), instance.Spec.Config.Mode, conf.Print()); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update emqx config through API")}
 		}
 
