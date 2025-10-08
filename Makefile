@@ -101,9 +101,12 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: COVERAGE_ENABLED ?= false
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build --build-arg COVERAGE_ENABLED=$(COVERAGE_ENABLED) -t ${OPERATOR_IMAGE} .
+	$(CONTAINER_TOOL) build -t ${OPERATOR_IMAGE} .
+
+.PHONY: docker-build-coverage
+docker-build-coverage: Dockerfile.coverage ## Build docker image with the manager and code coverage enabled.
+	$(CONTAINER_TOOL) build -t ${OPERATOR_IMAGE} -f Dockerfile.coverage .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -129,8 +132,13 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${OPERATOR_IMAGE}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
+Dockerfile.coverage: Dockerfile # prepare coverage Dockerfile
+	awk '{ if ($$0 ~ /RUN/) { sub(/go build -a -o manager/, "& -cover -covermode atomic") } print }' $< > $@
+	if diff -q $@ $<; then exit 1; fi
+
 Dockerfile.cross: Dockerfile # prepare cross-platform Dockerfile
-	awk '{ if (NR==2) { sub(/^FROM/, "FROM --platform=$${BUILDPLATFORM}") } print }' Dockerfile > Dockerfile.cross
+	awk '{ if (NR==2) { sub(/^FROM/, "FROM --platform=$${BUILDPLATFORM}") } print }' $< > $@
+	if diff -q $@ $<; then exit 1; fi
 
 ##@ Deployment
 
