@@ -22,7 +22,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      RELEASE_VERSION: ${{ (github.event_name == 'workflow_dispatch' && inputs.tag) || github.ref_name }}
+      RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       RELEASE_IMAGE: ghcr.io/${{ github.repository_owner }}/emqx-operator
     steps:
       - uses: actions/checkout@v4
