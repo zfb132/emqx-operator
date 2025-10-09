@@ -61,11 +61,14 @@ jobs:
         run: |
           make build-installer OPERATOR_IMAGE=${{ env.RELEASE_IMAGE }}:${{ env.RELEASE_VERSION || format('{0}-{1}', github.ref_name, github.sha) }}
 
-      - uses: softprops/action-gh-release@v2
+      - name: Create GitHub Release
         if: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
-        with:
-          files: dist/install.yaml
-          tag_name: ${{ env.RELEASE_VERSION }}
-          name: Release ${{ env.RELEASE_VERSION }}
-          draft: true
-          prerelease: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${RELEASE_VERSION}" \
+            dist/install.yaml \
+            --title "EMQX Operator ${RELEASE_VERSION}" \
+            --generate-notes \
+            --verify-tag \
+            --draft
