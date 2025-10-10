@@ -13,10 +13,10 @@
 - Access to a Kubernetes v1.11.3+ cluster.
 
 ### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+**Build and push your image to the location specified by `OPERATOR_IMAGE`:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/emqx-operator:tag
+make docker-build docker-push OPERATOR_IMAGE=<some-registry>/emqx-operator:tag
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified.
@@ -29,10 +29,10 @@ Make sure you have the proper permission to the registry if the above commands d
 make install
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+**Deploy the Manager to the cluster with the image specified by `OPERATOR_IMAGE`:**
 
 ```sh
-make deploy IMG=<some-registry>/emqx-operator:tag
+make deploy OPERATOR_IMAGE=<some-registry>/emqx-operator:tag
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
@@ -73,7 +73,7 @@ Following are the steps to build the installer and distribute this project to us
 1. Build the installer for the image built and published in the registry:
 
 ```sh
-make build-installer IMG=<some-registry>/emqx-operator:tag
+make build-installer OPERATOR_IMAGE=<some-registry>/emqx-operator:tag
 ```
 
 NOTE: The makefile target mentioned above generates an 'install.yaml'
@@ -111,4 +111,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

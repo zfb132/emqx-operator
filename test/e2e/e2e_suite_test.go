@@ -72,9 +72,8 @@ var _ = BeforeSuite(func() {
 	Expect(util.Run("make", "manifests")).To(Succeed())
 
 	By("build emqx-operator docker image")
-	Expect(util.Run("make", "docker-build",
-		fmt.Sprintf("IMG=%s", projectImage),
-		fmt.Sprintf("COVERAGE_ENABLED=%t", true),
+	Expect(util.Run("make", "docker-build-coverage",
+		fmt.Sprintf("OPERATOR_IMAGE=%s", projectImage),
 	)).To(Succeed())
 
 	By("load emqx-operator docker image into kind cluster")

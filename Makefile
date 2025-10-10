@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= emqx/emqx-operator:0.0.1
+OPERATOR_IMAGE ?= emqx/emqx-operator:0.0.1
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.31.0
 
@@ -101,36 +101,44 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: COVERAGE_ENABLED ?= false
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build --build-arg COVERAGE_ENABLED=$(COVERAGE_ENABLED) -t ${IMG} .
+	$(CONTAINER_TOOL) build -t ${OPERATOR_IMAGE} .
+
+.PHONY: docker-build-coverage
+docker-build-coverage: Dockerfile.coverage ## Build docker image with the manager and code coverage enabled.
+	$(CONTAINER_TOOL) build -t ${OPERATOR_IMAGE} -f Dockerfile.coverage .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
+	$(CONTAINER_TOOL) push ${OPERATOR_IMAGE}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
-# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
+# architectures. To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
-# To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+# - be able to push the image to your registry (i.e. if you do not set a valid value via
+#   OPERATOR_IMAGE=<myregistry/image:<tag>> then the export will fail)
+PLATFORMS ?= linux/arm64,linux/amd64
 .PHONY: docker-buildx
-docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+docker-buildx: Dockerfile.cross ## Build and push docker image for the manager for cross-platform support
 	- $(CONTAINER_TOOL) buildx create --name emqx-operator-builder
 	$(CONTAINER_TOOL) buildx use emqx-operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${OPERATOR_IMAGE} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm emqx-operator-builder
-	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${OPERATOR_IMAGE}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
+
+Dockerfile.coverage: Dockerfile # prepare coverage Dockerfile
+	awk '{ if ($$0 ~ /RUN/) { sub(/go build -a -o manager/, "& -cover -covermode atomic") } print }' $< > $@
+	if diff -q $@ $<; then exit 1; fi
+
+Dockerfile.cross: Dockerfile # prepare cross-platform Dockerfile
+	awk '{ if (NR==2) { sub(/^FROM/, "FROM --platform=$${BUILDPLATFORM}") } print }' $< > $@
+	if diff -q $@ $<; then exit 1; fi
 
 ##@ Deployment
 
@@ -149,7 +157,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: KUSTOMIZATION_FILE_PATH ?= config/default
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${OPERATOR_IMAGE}
 	$(KUSTOMIZE) build $(KUSTOMIZATION_FILE_PATH) | $(KUBECTL) apply --server-side=true -f -
 
 .PHONY: undeploy

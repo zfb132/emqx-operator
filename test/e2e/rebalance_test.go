@@ -22,7 +22,7 @@ var _ = Describe("Rebalance Test", Label("rebalance"), Ordered, func() {
 
 		By("deploy emqx-operator")
 		Expect(Run("make", "deploy",
-			fmt.Sprintf("IMG=%s", projectImage),
+			fmt.Sprintf("OPERATOR_IMAGE=%s", projectImage),
 			fmt.Sprintf("KUSTOMIZATION_FILE_PATH=%s", "test/e2e/files/manager"),
 		)).To(Succeed())
 		Expect(Kubectl("wait", "deployment", "emqx-operator-controller-manager",
