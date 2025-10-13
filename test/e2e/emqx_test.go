@@ -12,12 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	emqxCRBasic      = "test/e2e/files/resources/emqx.yaml"
-	emqxImage        = "emqx/emqx:5.10.0"
-	emqxImageUpgrade = "emqx/emqx:5.10.1"
-)
-
 func withCores(numReplicas int) []byte {
 	return fmt.Appendf(nil,
 		`{"spec": {"coreTemplate": {"spec": {"replicas": %d}}}}`,
@@ -52,7 +46,13 @@ spec:
 }
 
 //nolint:errcheck
-var _ = Describe("E2E Test", Label("base"), Ordered, func() {
+var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
+
+	const (
+		emqxCRBasic      = "test/e2e/files/resources/emqx.yaml"
+		emqxImage        = "emqx/emqx:5.10.0"
+		emqxImageUpgrade = "emqx/emqx:5.10.1"
+	)
 
 	BeforeAll(func() {
 		By("create manager namespace")

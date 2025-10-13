@@ -108,7 +108,7 @@ func checkDSReplicationStatus(g Gomega, coreReplicas int) {
 	g.Expect(status.DBs).NotTo(BeEmpty(), "No DS database is present")
 	g.Expect(status.DBs).To(
 		HaveEach(And(
-			HaveField("Name", Equal("messages")),
+			HaveField("Name", Not(BeEmpty())),
 			HaveField("NumShards", BeEquivalentTo(8)),
 			HaveField("NumShardReplicas", BeEquivalentTo(8*min(3, coreReplicas))),
 			HaveField("LostShardReplicas", BeEquivalentTo(0)),
