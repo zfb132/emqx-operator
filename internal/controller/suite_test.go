@@ -141,7 +141,7 @@ var _ = BeforeSuite(func() {
 	}()
 
 	emqxReconciler = NewEMQXReconciler(k8sManager)
-	emqxConf, err = config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+	emqxConf, err = config.EMQXConf(emqx.Spec.Config.Data)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(emqxConf).ToNot(BeNil())
 })

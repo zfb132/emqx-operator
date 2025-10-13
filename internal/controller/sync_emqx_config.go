@@ -5,7 +5,6 @@ import (
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	config "github.com/emqx/emqx-operator/internal/controller/config"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,9 +17,8 @@ type syncConfig struct {
 }
 
 func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	// Merge default config.
 	// Assuming the config is valid, otherwise master controller would bail out.
-	confStr := config.MergeDefaults(instance.Spec.Config.Data)
+	confStr := instance.Spec.Config.Data
 
 	// Make sure the config map exists
 	configMap := &corev1.ConfigMap{}

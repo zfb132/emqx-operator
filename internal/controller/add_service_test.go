@@ -13,7 +13,7 @@ import (
 )
 
 func loadConf(data string) *config.Conf {
-	conf, _ := config.EMQXConf(config.MergeDefaults(data))
+	conf, _ := config.EMQXConf(data)
 	return conf
 }
 

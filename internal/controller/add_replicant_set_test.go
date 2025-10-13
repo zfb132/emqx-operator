@@ -47,7 +47,7 @@ func TestGetNewReplicaSet(t *testing.T) {
 
 	t.Run("check metadata", func(t *testing.T) {
 		emqx := instance.DeepCopy()
-		conf, _ := config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
 		got := getNewReplicaSet(emqx, conf)
 
 		assert.Equal(t, emqx.Spec.ReplicantTemplate.Annotations, got.Annotations)
@@ -61,7 +61,7 @@ func TestGetNewReplicaSet(t *testing.T) {
 
 	t.Run("check selector and pod metadata", func(t *testing.T) {
 		emqx := instance.DeepCopy()
-		conf, _ := config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
 		got := getNewReplicaSet(emqx, conf)
 
 		assert.Equal(t, emqx.Spec.ReplicantTemplate.ObjectMeta.Annotations, got.Spec.Template.Annotations)
@@ -85,7 +85,7 @@ func TestGetNewReplicaSet(t *testing.T) {
 	t.Run("check http port", func(t *testing.T) {
 		emqx := instance.DeepCopy()
 		emqx.Spec.Config.Data = "dashboard.listeners.http.bind = 18083"
-		conf, _ := config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
 		got := getNewReplicaSet(emqx, conf)
 
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,
@@ -110,7 +110,7 @@ func TestGetNewReplicaSet(t *testing.T) {
 		dashboard.listeners.http.bind = 0
 		dashboard.listeners.https.bind = 18084
 		`
-		conf, _ := config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
 		got := getNewReplicaSet(emqx, conf)
 
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,
@@ -135,7 +135,7 @@ func TestGetNewReplicaSet(t *testing.T) {
 		dashboard.listeners.http.bind = 18083
 		dashboard.listeners.https.bind = 18084
 		`
-		conf, _ := config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
 		got := getNewReplicaSet(emqx, conf)
 
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,

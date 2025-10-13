@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lithammer/dedent"
 	"github.com/rory-z/go-hocon"
 	corev1 "k8s.io/api/core/v1"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
@@ -150,7 +149,7 @@ func (c *Conf) GetDashboardServicePort() []corev1.ServicePort {
 func (c *Conf) GetListenersServicePorts() []corev1.ServicePort {
 	portList := []corev1.ServicePort{}
 
-	// Should be non-empty, see `mergeDefaultConfig`
+	// May be empty
 	for t, listener := range c.config.GetObject("listeners") {
 		if listener.Type() != hocon.ObjectType {
 			continue
@@ -235,20 +234,6 @@ func (c *Conf) GetListenersServicePorts() []corev1.ServicePort {
 	})
 
 	return portList
-}
-
-func MergeDefaults(config string) string {
-	template := dedent.Dedent(`
-	# emqx-operator default config
-	listeners.tcp.default.bind = 1883
-	listeners.ssl.default.bind = 8883
-	listeners.ws.default.bind  = 8083
-	listeners.wss.default.bind = 8084
-
-	# user config
-	%s
-	`)
-	return fmt.Sprintf(template, config)
 }
 
 /* hocon.Config helper functions */
