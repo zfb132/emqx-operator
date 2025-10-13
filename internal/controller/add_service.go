@@ -53,7 +53,7 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {
 	svc := &corev1.Service{}
 	if instance.Spec.DashboardServiceTemplate != nil {
-		if !*instance.Spec.DashboardServiceTemplate.Enabled {
+		if !instance.Spec.DashboardServiceTemplate.IsEnabled() {
 			return nil
 		}
 		svc.ObjectMeta = *instance.Spec.DashboardServiceTemplate.ObjectMeta.DeepCopy()
@@ -86,7 +86,7 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *co
 func generateListenerService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {
 	svc := &corev1.Service{}
 	if instance.Spec.ListenersServiceTemplate != nil {
-		if !*instance.Spec.ListenersServiceTemplate.Enabled {
+		if !instance.Spec.ListenersServiceTemplate.IsEnabled() {
 			return nil
 		}
 		svc.ObjectMeta = *instance.Spec.ListenersServiceTemplate.ObjectMeta.DeepCopy()

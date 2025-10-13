@@ -313,3 +313,7 @@ type ServiceTemplate struct {
 	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	Spec corev1.ServiceSpec `json:"spec,omitempty"`
 }
+
+func (s *ServiceTemplate) IsEnabled() bool {
+	return s.Enabled != nil && *s.Enabled
+}
