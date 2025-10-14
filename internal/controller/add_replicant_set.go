@@ -82,8 +82,8 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 			}
 			return subResult{err: emperror.Wrap(err, "failed to create replicaSet")}
 		}
-		_ = a.updateEMQXStatus(r, instance, "CreateReplicaSet", rsHash)
-		return subResult{}
+		updateResult := a.updateEMQXStatus(r, instance, "CreateReplicaSet", rsHash)
+		return subResult{err: updateResult}
 	}
 
 	rs.ObjectMeta = updateReplicantSet.ObjectMeta
@@ -109,7 +109,8 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 		}); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update replicaSet")}
 		}
-		_ = a.updateEMQXStatus(r, instance, "UpdateReplicaSet", rsHash)
+		updateResult := a.updateEMQXStatus(r, instance, "UpdateReplicaSet", rsHash)
+		return subResult{err: updateResult}
 	}
 	return subResult{}
 }
