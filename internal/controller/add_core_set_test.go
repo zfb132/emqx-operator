@@ -44,8 +44,8 @@ func TestGetNewStatefulSet(t *testing.T) {
 
 	t.Run("check metadata", func(t *testing.T) {
 		emqx := instance.DeepCopy()
-		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
-		got := getNewStatefulSet(emqx, conf)
+		conf, _ := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
+		got := newStatefulSet(emqx, conf)
 
 		assert.Equal(t, emqx.Spec.CoreTemplate.Annotations, got.Annotations)
 		assert.Equal(t, "core-label-value", got.Labels["core-label-key"])
@@ -58,8 +58,8 @@ func TestGetNewStatefulSet(t *testing.T) {
 
 	t.Run("check selector and pod metadata", func(t *testing.T) {
 		emqx := instance.DeepCopy()
-		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
-		got := getNewStatefulSet(emqx, conf)
+		conf, _ := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
+		got := newStatefulSet(emqx, conf)
 		assert.Equal(t, emqx.Spec.CoreTemplate.ObjectMeta.Annotations, got.Spec.Template.Annotations)
 		assert.EqualValues(t, map[string]string{
 			appsv2beta1.LabelsInstanceKey:        "emqx",
@@ -78,24 +78,30 @@ func TestGetNewStatefulSet(t *testing.T) {
 		}, got.Spec.Selector.MatchLabels)
 	})
 
+	t.Run("check bootstrap API keys", func(t *testing.T) {
+		emqx := instance.DeepCopy()
+		conf, _ := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
+		rs := newStatefulSet(emqx, conf)
+		got := []corev1.EnvVar{}
+		for _, env := range rs.Spec.Template.Spec.Containers[0].Env {
+			if env.Name == "EMQX_API_KEY__BOOTSTRAP_FILE" {
+				got = append(got, env)
+			}
+		}
+		assert.NotEmpty(t, got)
+	})
+
 	t.Run("check http port", func(t *testing.T) {
 		emqx := instance.DeepCopy()
 		emqx.Spec.Config.Data = "dashboard.listeners.http.bind = 18083"
-		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
-		got := getNewStatefulSet(emqx, conf)
+		conf, _ := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
+		got := newStatefulSet(emqx, conf)
 
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,
 			corev1.ContainerPort{
 				Name:          "dashboard",
 				Protocol:      corev1.ProtocolTCP,
 				ContainerPort: 18083,
-			},
-		)
-
-		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "EMQX_DASHBOARD__LISTENERS__HTTP__BIND",
-				Value: "18083",
 			},
 		)
 	})
@@ -106,21 +112,13 @@ func TestGetNewStatefulSet(t *testing.T) {
 		dashboard.listeners.http.bind = 0
 		dashboard.listeners.https.bind = 18084
 		`
-		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
-		got := getNewStatefulSet(emqx, conf)
-
+		conf, _ := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
+		got := newStatefulSet(emqx, conf)
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,
 			corev1.ContainerPort{
 				Name:          "dashboard-https",
 				Protocol:      corev1.ProtocolTCP,
 				ContainerPort: 18084,
-			},
-		)
-
-		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "EMQX_DASHBOARD__LISTENERS__HTTPS__BIND",
-				Value: "18084",
 			},
 		)
 	})
@@ -131,9 +129,8 @@ func TestGetNewStatefulSet(t *testing.T) {
 		dashboard.listeners.http.bind = 18083
 		dashboard.listeners.https.bind = 18084
 		`
-		conf, _ := config.EMQXConf(emqx.Spec.Config.Data)
-		got := getNewStatefulSet(emqx, conf)
-
+		conf, _ := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
+		got := newStatefulSet(emqx, conf)
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,
 			corev1.ContainerPort{
 				Name:          "dashboard",
@@ -141,26 +138,11 @@ func TestGetNewStatefulSet(t *testing.T) {
 				ContainerPort: 18083,
 			},
 		)
-
 		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Ports,
 			corev1.ContainerPort{
 				Name:          "dashboard-https",
 				Protocol:      corev1.ProtocolTCP,
 				ContainerPort: 18084,
-			},
-		)
-
-		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "EMQX_DASHBOARD__LISTENERS__HTTP__BIND",
-				Value: "18083",
-			},
-		)
-
-		assert.Contains(t, got.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "EMQX_DASHBOARD__LISTENERS__HTTPS__BIND",
-				Value: "18084",
 			},
 		)
 	})

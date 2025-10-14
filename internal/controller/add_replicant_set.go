@@ -2,12 +2,13 @@ package controller
 
 import (
 	"fmt"
-	"strconv"
+	"slices"
 
 	emperror "emperror.dev/errors"
 	"github.com/cisco-open/k8s-objectmatcher/patch"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +36,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 		return subResult{}
 	}
 
-	rs := getNewReplicaSet(instance, r.conf)
+	rs := newReplicaSet(instance, r.conf)
 	rsHash := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
 
 	needCreate := false
@@ -119,32 +120,18 @@ func (a *addReplicantSet) updateEMQXStatus(r *reconcileRound, instance *appsv2be
 	return a.Client.Status().Update(r.ctx, instance)
 }
 
-func getNewReplicaSet(instance *appsv2beta1.EMQX, conf *config.Conf) *appsv1.ReplicaSet {
-	svcPorts := conf.GetDashboardServicePort()
-	preRs := generateReplicaSet(instance)
-	podTemplateSpecHash := computeHash(preRs.Spec.Template.DeepCopy(), instance.Status.ReplicantNodesStatus.CollisionCount)
-	preRs.Name = preRs.Name + "-" + podTemplateSpecHash
-	preRs.Labels = appsv2beta1.CloneAndAddLabel(preRs.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	preRs.Spec.Selector = appsv2beta1.CloneSelectorAndAddLabel(preRs.Spec.Selector, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	preRs.Spec.Template.Labels = appsv2beta1.CloneAndAddLabel(preRs.Spec.Template.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	preRs.Spec.Template.Spec.Containers[0].Ports = util.MergeContainerPorts(
-		preRs.Spec.Template.Spec.Containers[0].Ports,
-		util.MapServicePortsToContainerPorts(svcPorts),
+func newReplicaSet(instance *appsv2beta1.EMQX, conf *config.EMQX) *appsv1.ReplicaSet {
+	rs := generateReplicaSet(instance)
+	podTemplateSpecHash := computeHash(rs.Spec.Template.DeepCopy(), instance.Status.ReplicantNodesStatus.CollisionCount)
+	rs.Name = rs.Name + "-" + podTemplateSpecHash
+	rs.Labels = appsv2beta1.CloneAndAddLabel(rs.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
+	rs.Spec.Selector = appsv2beta1.CloneSelectorAndAddLabel(rs.Spec.Selector, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
+	rs.Spec.Template.Labels = appsv2beta1.CloneAndAddLabel(rs.Spec.Template.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
+	rs.Spec.Template.Spec.Containers[0].Ports = util.MergeContainerPorts(
+		rs.Spec.Template.Spec.Containers[0].Ports,
+		util.MapServicePortsToContainerPorts(conf.GetDashboardServicePorts()),
 	)
-	for _, p := range preRs.Spec.Template.Spec.Containers[0].Ports {
-		if p.Name == "dashboard" {
-			preRs.Spec.Template.Spec.Containers[0].Env = append([]corev1.EnvVar{
-				{Name: "EMQX_DASHBOARD__LISTENERS__HTTP__BIND", Value: strconv.Itoa(int(p.ContainerPort))},
-			}, preRs.Spec.Template.Spec.Containers[0].Env...)
-		}
-		if p.Name == "dashboard-https" {
-			preRs.Spec.Template.Spec.Containers[0].Env = append([]corev1.EnvVar{
-				{Name: "EMQX_DASHBOARD__LISTENERS__HTTPS__BIND", Value: strconv.Itoa(int(p.ContainerPort))},
-			}, preRs.Spec.Template.Spec.Containers[0].Env...)
-		}
-	}
-
-	return preRs
+	return rs
 }
 
 func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
@@ -167,6 +154,9 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 			Command: []string{"/bin/sh", "-c", "emqx ctl cluster leave"},
 		},
 	}
+
+	cookie := resources.Cookie(instance)
+	config := resources.EMQXConfig(instance)
 
 	return &appsv1.ReplicaSet{
 		TypeMeta: metav1.TypeMeta{
@@ -241,21 +231,7 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 									Name:  "EMQX_NODE__ROLE",
 									Value: "replicant",
 								},
-								{
-									Name: "EMQX_NODE__COOKIE",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: instance.NodeCookieNamespacedName().Name,
-											},
-											Key: "node_cookie",
-										},
-									},
-								},
-								{
-									Name:  "EMQX_API_KEY__BOOTSTRAP_FILE",
-									Value: `"/opt/emqx/data/bootstrap_api_key"`,
-								},
+								cookie.EnvVar(),
 							}, instance.Spec.ReplicantTemplate.Spec.Env...),
 							EnvFrom:         instance.Spec.ReplicantTemplate.Spec.EnvFrom,
 							Resources:       instance.Spec.ReplicantTemplate.Spec.Resources,
@@ -264,57 +240,32 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 							ReadinessProbe:  instance.Spec.ReplicantTemplate.Spec.ReadinessProbe,
 							StartupProbe:    instance.Spec.ReplicantTemplate.Spec.StartupProbe,
 							Lifecycle:       lifecycle,
-							VolumeMounts: append([]corev1.VolumeMount{
-								{
-									Name:      "bootstrap-api-key",
-									MountPath: "/opt/emqx/data/bootstrap_api_key",
-									SubPath:   "bootstrap_api_key",
-									ReadOnly:  true,
+							VolumeMounts: slices.Concat(
+								[]corev1.VolumeMount{
+									{
+										Name:      instance.ReplicantName() + "-log",
+										MountPath: "/opt/emqx/log",
+									},
+									{
+										Name:      instance.ReplicantName() + "-data",
+										MountPath: "/opt/emqx/data",
+									},
 								},
-								{
-									Name:      "bootstrap-config",
-									MountPath: "/opt/emqx/etc/" + appsv2beta1.BaseConfigFile,
-									SubPath:   appsv2beta1.BaseConfigFile,
-									ReadOnly:  true,
-								},
-								{
-									Name:      instance.ReplicantNamespacedName().Name + "-log",
-									MountPath: "/opt/emqx/log",
-								},
-								{
-									Name:      instance.ReplicantNamespacedName().Name + "-data",
-									MountPath: "/opt/emqx/data",
-								},
-							}, instance.Spec.ReplicantTemplate.Spec.ExtraVolumeMounts...),
+								config.VolumeMounts(),
+								instance.Spec.ReplicantTemplate.Spec.ExtraVolumeMounts,
+							),
 						},
 					}, instance.Spec.ReplicantTemplate.Spec.ExtraContainers...),
 					Volumes: append([]corev1.Volume{
+						config.Volume(),
 						{
-							Name: "bootstrap-api-key",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: instance.BootstrapAPIKeyNamespacedName().Name,
-								},
-							},
-						},
-						{
-							Name: "bootstrap-config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: instance.ConfigsNamespacedName().Name,
-									},
-								},
-							},
-						},
-						{
-							Name: instance.ReplicantNamespacedName().Name + "-log",
+							Name: instance.ReplicantName() + "-log",
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
 						{
-							Name: instance.ReplicantNamespacedName().Name + "-data",
+							Name: instance.ReplicantName() + "-data",
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},

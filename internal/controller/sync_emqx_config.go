@@ -5,10 +5,10 @@ import (
 
 	emperror "emperror.dev/errors"
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -17,14 +17,11 @@ type syncConfig struct {
 }
 
 func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	// Assuming the config is valid, otherwise master controller would bail out.
-	confStr := instance.Spec.Config.Data
-
 	// Make sure the config map exists
 	configMap := &corev1.ConfigMap{}
 	err := s.Client.Get(r.ctx, instance.ConfigsNamespacedName(), configMap)
 	if err != nil && k8sErrors.IsNotFound(err) {
-		configMap = generateConfigMap(instance, confStr)
+		configMap = resources.EMQXConfig(instance).ConfigMap()
 		if err := ctrl.SetControllerReference(instance, configMap, s.Scheme); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to set controller reference for configMap")}
 		}
@@ -38,8 +35,10 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	}
 
 	// If the config is different, update the config right away.
-	if configMap.Data[appsv2beta1.BaseConfigFile] != confStr {
-		if err := s.Client.Update(r.ctx, generateConfigMap(instance, confStr)); err != nil {
+	// Assuming the config is valid, otherwise master controller would bail out.
+	if configMap.Data[resources.BaseConfigFile] != instance.Spec.Config.Data {
+		configMap = resources.EMQXConfig(instance).ConfigMap()
+		if err := s.Client.Update(r.ctx, configMap); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update configMap")}
 		}
 	}
@@ -86,21 +85,4 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	}
 
 	return subResult{}
-}
-
-func generateConfigMap(instance *appsv2beta1.EMQX, data string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.ConfigsNamespacedName().Name,
-			Namespace: instance.Namespace,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), instance.Labels),
-		},
-		Data: map[string]string{
-			appsv2beta1.BaseConfigFile: data,
-		},
-	}
 }

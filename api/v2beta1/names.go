@@ -29,12 +29,20 @@ func (instance *EMQX) NamespacedName(name string) types.NamespacedName {
 	}
 }
 
+func (instance *EMQX) CoreName() string {
+	return fmt.Sprintf("%s-core", instance.Name)
+}
+
 func (instance *EMQX) CoreNamespacedName() types.NamespacedName {
-	return instance.NamespacedName(fmt.Sprintf("%s-core", instance.Name))
+	return instance.NamespacedName(instance.CoreName())
+}
+
+func (instance *EMQX) ReplicantName() string {
+	return fmt.Sprintf("%s-replicant", instance.Name)
 }
 
 func (instance *EMQX) ReplicantNamespacedName() types.NamespacedName {
-	return instance.NamespacedName(fmt.Sprintf("%s-replicant", instance.Name))
+	return instance.NamespacedName(instance.ReplicantName())
 }
 
 func (instance *EMQX) HeadlessServiceNamespacedName() types.NamespacedName {
