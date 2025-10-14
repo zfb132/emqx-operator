@@ -191,7 +191,7 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 					SecurityContext:           instance.Spec.ReplicantTemplate.Spec.PodSecurityContext,
 					Affinity:                  instance.Spec.ReplicantTemplate.Spec.Affinity,
 					Tolerations:               instance.Spec.ReplicantTemplate.Spec.Tolerations,
-					TopologySpreadConstraints: instance.Spec.CoreTemplate.Spec.TopologySpreadConstraints,
+					TopologySpreadConstraints: instance.Spec.ReplicantTemplate.Spec.TopologySpreadConstraints,
 					NodeName:                  instance.Spec.ReplicantTemplate.Spec.NodeName,
 					NodeSelector:              instance.Spec.ReplicantTemplate.Spec.NodeSelector,
 					InitContainers:            instance.Spec.ReplicantTemplate.Spec.InitContainers,
