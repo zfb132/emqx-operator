@@ -273,8 +273,8 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 								},
 								{
 									Name:      "bootstrap-config",
-									MountPath: "/opt/emqx/etc/emqx.conf",
-									SubPath:   "emqx.conf",
+									MountPath: "/opt/emqx/etc/" + appsv2beta1.BaseConfigFile,
+									SubPath:   appsv2beta1.BaseConfigFile,
 									ReadOnly:  true,
 								},
 								{

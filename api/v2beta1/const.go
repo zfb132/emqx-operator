@@ -22,6 +22,8 @@ const DefaultContainerName string = "emqx"
 
 const DefaultBootstrapAPIKey string = "emqx-operator-controller"
 
+const BaseConfigFile string = "base.hocon"
+
 const (
 	// labels
 	LabelsInstanceKey        string = "apps.emqx.io/instance"   // my-emqx

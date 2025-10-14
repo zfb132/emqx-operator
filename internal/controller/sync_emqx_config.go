@@ -38,7 +38,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	}
 
 	// If the config is different, update the config right away.
-	if configMap.Data["emqx.conf"] != confStr {
+	if configMap.Data[appsv2beta1.BaseConfigFile] != confStr {
 		if err := s.Client.Update(r.ctx, generateConfigMap(instance, confStr)); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update configMap")}
 		}
@@ -100,7 +100,7 @@ func generateConfigMap(instance *appsv2beta1.EMQX, data string) *corev1.ConfigMa
 			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), instance.Labels),
 		},
 		Data: map[string]string{
-			"emqx.conf": data,
+			appsv2beta1.BaseConfigFile: data,
 		},
 	}
 }
