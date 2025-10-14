@@ -66,16 +66,30 @@ func (c *Conf) StripReadOnlyConfig() []string {
 	root := c.config.GetRoot().(hocon.Object)
 	stripped := []string{}
 	for _, key := range []string{
+		// Explicitly considered read-only:
 		"node",
-		"cluster",
-		"dashboard",
 		"rpc",
+		// Effectively read-only, not changeable in runtime:
 		"durable_sessions",
 		"durable_storage",
 	} {
 		if _, ok := root[key]; ok {
 			stripped = append(stripped, key)
 			delete(root, key)
+		}
+	}
+	// Cluster configuration is also read-only, except for:
+	// * `cluster.links` is changeable in runtime.
+	if subrootValue, ok := root["cluster"]; ok {
+		subroot, ok := subrootValue.(hocon.Object)
+		if ok {
+			for key := range subroot {
+				if key == "links" {
+					continue
+				}
+				stripped = append(stripped, "cluster."+key)
+				delete(subroot, key)
+			}
 		}
 	}
 	return stripped

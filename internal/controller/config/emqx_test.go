@@ -86,7 +86,7 @@ func TestStripReadOnlyConfig(t *testing.T) {
 		got := config.StripReadOnlyConfig()
 		assert.ElementsMatch(t, got, []string{
 			"node",
-			"cluster",
+			"cluster.name",
 			"durable_sessions",
 		})
 	})
