@@ -98,7 +98,7 @@ func generateBootstrapAPIKeySecret(instance *appsv2beta1.EMQX, bootstrapAPIKeys 
 	}
 }
 
-func generateNodeCookieSecret(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Secret {
+func generateNodeCookieSecret(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Secret {
 	cookie := conf.GetNodeCookie()
 	if cookie == "" {
 		cookie, _ = password.Generate(64, 10, 0, true, true)

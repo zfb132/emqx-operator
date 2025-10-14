@@ -23,7 +23,7 @@ func TestGenerateNodeCookieSecret(t *testing.T) {
 	}
 
 	t.Run("generate node cookie secret", func(t *testing.T) {
-		conf, _ := config.EMQXConf(instance.Spec.Config.Data)
+		conf, _ := config.EMQXConfig(instance.Spec.Config.Data)
 		got := generateNodeCookieSecret(instance, conf)
 		assert.Equal(t, "emqx-node-cookie", got.Name)
 		_, ok := got.StringData["node_cookie"]
@@ -32,7 +32,7 @@ func TestGenerateNodeCookieSecret(t *testing.T) {
 
 	t.Run("generate node cookie when already set node cookie", func(t *testing.T) {
 		instance.Spec.Config.Data = "node.cookie = fake"
-		conf, _ := config.EMQXConf(instance.Spec.Config.Data)
+		conf, _ := config.EMQXConfig(instance.Spec.Config.Data)
 		got := generateNodeCookieSecret(instance, conf)
 		assert.Equal(t, "emqx-node-cookie", got.Name)
 		_, ok := got.StringData["node_cookie"]

@@ -31,7 +31,7 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		return subResult{err: emperror.Wrap(err, "failed to get emqx configs by api")}
 	}
 
-	conf, err := config.EMQXConf(configStr)
+	conf, err := config.EMQXConfig(configStr)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to load emqx config")}
 	}
@@ -50,7 +50,7 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	return subResult{}
 }
 
-func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {
+func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Service {
 	meta := &metav1.ObjectMeta{}
 	spec := &corev1.ServiceSpec{}
 	if instance.Spec.DashboardServiceTemplate != nil {
@@ -61,7 +61,7 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *co
 		spec = instance.Spec.DashboardServiceTemplate.Spec.DeepCopy()
 	}
 
-	ports := conf.GetDashboardServicePort()
+	ports := conf.GetDashboardServicePorts()
 	if len(ports) == 0 {
 		return nil
 	}
@@ -84,7 +84,7 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *co
 	}
 }
 
-func generateListenerService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {
+func generateListenerService(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Service {
 	meta := &metav1.ObjectMeta{}
 	spec := &corev1.ServiceSpec{}
 	if instance.Spec.ListenersServiceTemplate != nil {

@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package config
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,13 +26,13 @@ import (
 
 func TestCopy(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
-		config, err := EMQXConf(`
+		config, err := EMQXConfig(`
 		durable_sessions.enable = true
 		listeners.tcp.default.bind = 11883
 		`)
 		assert.Nil(t, err)
 		got := config.Copy()
-		assert.NotSame(t, config.config, got.config)
+		assert.NotSame(t, config.Config, got.Config)
 		got.StripReadOnlyConfig()
 		assert.NotEqual(t, config.Print(), got.Print())
 	})
@@ -41,21 +40,21 @@ func TestCopy(t *testing.T) {
 
 func TestNodeCookie(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
-		config, err := EMQXConf("")
+		config, err := EMQXConfig("")
 		assert.Nil(t, err)
 		got := config.GetNodeCookie()
 		assert.Equal(t, "", got)
 	})
 
 	t.Run("simple cookie", func(t *testing.T) {
-		config, err := EMQXConf(`node.cookie = COOKIE`)
+		config, err := EMQXConfig(`node.cookie = COOKIE`)
 		assert.Nil(t, err)
 		got := config.GetNodeCookie()
 		assert.Equal(t, "COOKIE", got)
 	})
 
 	t.Run("cookie with space and special characters", func(t *testing.T) {
-		config, err := EMQXConf(`node.cookie = "COOKIE #!@#$"`)
+		config, err := EMQXConfig(`node.cookie = "COOKIE #!@#$"`)
 		assert.Nil(t, err)
 		got := config.GetNodeCookie()
 		assert.Equal(t, "COOKIE #!@#$", got)
@@ -64,14 +63,14 @@ func TestNodeCookie(t *testing.T) {
 
 func TestStripReadOnlyConfig(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
-		config, err := EMQXConf("")
+		config, err := EMQXConfig("")
 		assert.Nil(t, err)
 		got := config.StripReadOnlyConfig()
 		assert.Empty(t, got)
 	})
 
 	t.Run("non-empty config", func(t *testing.T) {
-		config, err := EMQXConf(`
+		config, err := EMQXConfig(`
 		node.cookie = COOKIE
 		cluster.name = emqx
 		listeners {
@@ -94,7 +93,7 @@ func TestStripReadOnlyConfig(t *testing.T) {
 
 func TestGetDashboardPortMap(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
-		config, err := EMQXConf("")
+		config, err := EMQXConfig("")
 		assert.Nil(t, err)
 		got := config.GetDashboardPortMap()
 		assert.Equal(t, map[string]int{
@@ -103,12 +102,12 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 
 	t.Run("wrong config", func(t *testing.T) {
-		_, err := EMQXConf("hello world")
+		_, err := EMQXConfig("hello world")
 		assert.ErrorContains(t, err, "invalid config object")
 	})
 
 	t.Run("a single http port", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.http.bind = 18083`)
+		config, err := EMQXConfig(`dashboard.listeners.http.bind = 18083`)
 		assert.Nil(t, err)
 		got := config.GetDashboardPortMap()
 		assert.Equal(t, map[string]int{
@@ -117,7 +116,7 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 
 	t.Run("a single IPV4 http port", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.http.bind = "0.0.0.0:18083"`)
+		config, err := EMQXConfig(`dashboard.listeners.http.bind = "0.0.0.0:18083"`)
 		assert.Nil(t, err)
 		got := config.GetDashboardPortMap()
 		assert.Equal(t, map[string]int{
@@ -126,7 +125,7 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 
 	t.Run("a single IPV6 http port", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.http.bind = "[::]:18083"`)
+		config, err := EMQXConfig(`dashboard.listeners.http.bind = "[::]:18083"`)
 		assert.Nil(t, err)
 		got := config.GetDashboardPortMap()
 		assert.Equal(t, map[string]int{
@@ -135,7 +134,7 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 
 	t.Run("a single https port", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.https.bind = 18084`)
+		config, err := EMQXConfig(`dashboard.listeners.https.bind = 18084`)
 		assert.Nil(t, err)
 		got := config.GetDashboardPortMap()
 		assert.Equal(t, map[string]int{
@@ -145,7 +144,7 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 
 	t.Run("disable http port and a single https port", func(t *testing.T) {
-		config, err := EMQXConf(`
+		config, err := EMQXConfig(`
 			dashboard.listeners.http.bind = 0
 			dashboard.listeners.https.bind = 18084
 		`)
@@ -157,7 +156,7 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 
 	t.Run("disable all port", func(t *testing.T) {
-		config, err := EMQXConf(`
+		config, err := EMQXConfig(`
 			dashboard.listeners.http.bind = 0
 			dashboard.listeners.https.bind = 0
 		`)
@@ -167,7 +166,7 @@ func TestGetDashboardPortMap(t *testing.T) {
 	})
 }
 
-func TestGetDashboardServicePort(t *testing.T) {
+func TestGetDashboardServicePorts(t *testing.T) {
 	expect := []corev1.ServicePort{
 		{
 			Name:       "dashboard",
@@ -177,43 +176,50 @@ func TestGetDashboardServicePort(t *testing.T) {
 		},
 	}
 
-	t.Run("a single port", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.http.bind = 18083`)
+	t.Run("empty config with defaults", func(t *testing.T) {
+		config, err := EMQXConfigWithDefaults("")
 		assert.Nil(t, err)
-		got := config.GetDashboardServicePort()
+		got := config.GetDashboardServicePorts()
+		assert.Equal(t, expect, got)
+	})
+
+	t.Run("a single port", func(t *testing.T) {
+		config, err := EMQXConfig(`dashboard.listeners.http.bind = 18083`)
+		assert.Nil(t, err)
+		got := config.GetDashboardServicePorts()
 		assert.Equal(t, expect, got)
 	})
 
 	t.Run("ipv4 address", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.http.bind = "0.0.0.0:18083"`)
+		config, err := EMQXConfig(`dashboard.listeners.http.bind = "0.0.0.0:18083"`)
 		assert.Nil(t, err)
-		got := config.GetDashboardServicePort()
+		got := config.GetDashboardServicePorts()
 		assert.Equal(t, expect, got)
 	})
 
 	t.Run("ipv6 address", func(t *testing.T) {
-		config, err := EMQXConf(`dashboard.listeners.http.bind = "[::]:18083"`)
+		config, err := EMQXConfig(`dashboard.listeners.http.bind = "[::]:18083"`)
 		assert.Nil(t, err)
-		got := config.GetDashboardServicePort()
+		got := config.GetDashboardServicePorts()
 		assert.Equal(t, expect, got)
 	})
 
 	t.Run("empty config", func(t *testing.T) {
-		config, err := EMQXConf("")
+		config, err := EMQXConfig("")
 		assert.Nil(t, err)
-		got := config.GetDashboardServicePort()
+		got := config.GetDashboardServicePorts()
 		assert.Equal(t, expect, got)
 	})
 
 	t.Run("wrong config", func(t *testing.T) {
-		_, err := EMQXConf("hello world")
+		_, err := EMQXConfig("hello world")
 		assert.ErrorContains(t, err, "invalid config object")
 	})
 }
 
 func TestGetListenersServicePorts(t *testing.T) {
 	t.Run("check listeners", func(t *testing.T) {
-		config, err := EMQXConf(`
+		config, err := EMQXConfig(`
 			listeners.tcp.default.bind = "0.0.0.0:1883"
 			listeners.ssl.default.bind = "0.0.0.0:8883"
 			listeners.ws.default.bind = "0.0.0.0:8083"
@@ -257,7 +263,7 @@ func TestGetListenersServicePorts(t *testing.T) {
 	})
 
 	t.Run("check gateway listeners", func(t *testing.T) {
-		config, err := EMQXConf(`
+		config, err := EMQXConfig(`
 			gateway.coap.listeners.udp.default.bind = "5683"
 			gateway.exporto.listeners.tcp.default.bind = "7993"
 			gateway.lwm2w.listeners.udp.default.bind = "5783"
@@ -298,34 +304,5 @@ func TestGetListenersServicePorts(t *testing.T) {
 				TargetPort: intstr.Parse("61613"),
 			},
 		}, got)
-	})
-}
-
-func TestMergeDefaultConfig(t *testing.T) {
-	t.Run("case1", func(t *testing.T) {
-		config := ""
-		got := MergeDefaults(config)
-		conf, err := EMQXConf(got)
-		assert.Nil(t, err)
-		assert.Equal(t, "1883", conf.config.GetString("listeners.tcp.default.bind"))
-		assert.Equal(t, "8883", conf.config.GetString("listeners.ssl.default.bind"))
-		assert.Equal(t, "8083", conf.config.GetString("listeners.ws.default.bind"))
-		assert.Equal(t, "8084", conf.config.GetString("listeners.wss.default.bind"))
-	})
-
-	t.Run("case2", func(t *testing.T) {
-		config := ""
-		config += fmt.Sprintln("listeners.tcp.default.bind = 31883")
-		config += fmt.Sprintln("listeners.ssl.default.bind = 38883")
-		config += fmt.Sprintln("listeners.ws.default.bind  = 38083")
-		config += fmt.Sprintln("listeners.wss.default.bind = 38084")
-
-		got := MergeDefaults(config)
-		conf, err := EMQXConf(got)
-		assert.Nil(t, err)
-		assert.Equal(t, "31883", conf.config.GetString("listeners.tcp.default.bind"))
-		assert.Equal(t, "38883", conf.config.GetString("listeners.ssl.default.bind"))
-		assert.Equal(t, "38083", conf.config.GetString("listeners.ws.default.bind"))
-		assert.Equal(t, "38084", conf.config.GetString("listeners.wss.default.bind"))
 	})
 }

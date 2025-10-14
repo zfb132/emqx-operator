@@ -109,7 +109,7 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, r.Client.Status().Update(ctx, rebalance)
 	}
 
-	conf, err := config.EMQXConf(emqx.Spec.Config.Data)
+	conf, err := config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
 	if err != nil {
 		return ctrl.Result{}, emperror.New("failed to parse config")
 	}
