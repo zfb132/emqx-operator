@@ -51,13 +51,14 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 }
 
 func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {
-	svc := &corev1.Service{}
+	meta := &metav1.ObjectMeta{}
+	spec := &corev1.ServiceSpec{}
 	if instance.Spec.DashboardServiceTemplate != nil {
 		if !instance.Spec.DashboardServiceTemplate.IsEnabled() {
 			return nil
 		}
-		svc.ObjectMeta = *instance.Spec.DashboardServiceTemplate.ObjectMeta.DeepCopy()
-		svc.Spec = *instance.Spec.DashboardServiceTemplate.Spec.DeepCopy()
+		meta = instance.Spec.DashboardServiceTemplate.ObjectMeta.DeepCopy()
+		spec = instance.Spec.DashboardServiceTemplate.Spec.DeepCopy()
 	}
 
 	ports := conf.GetDashboardServicePort()
@@ -65,8 +66,8 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *co
 		return nil
 	}
 
-	svc.Spec.Ports = util.MergeServicePorts(svc.Spec.Ports, ports)
-	svc.Spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
+	spec.Ports = util.MergeServicePorts(spec.Ports, ports)
+	spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
 
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -76,21 +77,22 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.Conf) *co
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   instance.Namespace,
 			Name:        instance.DashboardServiceNamespacedName().Name,
-			Labels:      appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), svc.ObjectMeta.Labels),
-			Annotations: svc.ObjectMeta.Annotations,
+			Labels:      appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), meta.Labels),
+			Annotations: meta.Annotations,
 		},
-		Spec: svc.Spec,
+		Spec: *spec,
 	}
 }
 
 func generateListenerService(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Service {
-	svc := &corev1.Service{}
+	meta := &metav1.ObjectMeta{}
+	spec := &corev1.ServiceSpec{}
 	if instance.Spec.ListenersServiceTemplate != nil {
 		if !instance.Spec.ListenersServiceTemplate.IsEnabled() {
 			return nil
 		}
-		svc.ObjectMeta = *instance.Spec.ListenersServiceTemplate.ObjectMeta.DeepCopy()
-		svc.Spec = *instance.Spec.ListenersServiceTemplate.Spec.DeepCopy()
+		meta = instance.Spec.ListenersServiceTemplate.ObjectMeta.DeepCopy()
+		spec = instance.Spec.ListenersServiceTemplate.Spec.DeepCopy()
 	}
 
 	ports := conf.GetListenersServicePorts()
@@ -123,10 +125,10 @@ func generateListenerService(instance *appsv2beta1.EMQX, conf *config.Conf) *cor
 		}...)
 	}
 
-	svc.Spec.Ports = util.MergeServicePorts(svc.Spec.Ports, ports)
-	svc.Spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
+	spec.Ports = util.MergeServicePorts(spec.Ports, ports)
+	spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
 	if appsv2beta1.IsExistReplicant(instance) && instance.Status.ReplicantNodesStatus.ReadyReplicas > 0 {
-		svc.Spec.Selector = appsv2beta1.DefaultReplicantLabels(instance)
+		spec.Selector = appsv2beta1.DefaultReplicantLabels(instance)
 	}
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -136,9 +138,9 @@ func generateListenerService(instance *appsv2beta1.EMQX, conf *config.Conf) *cor
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   instance.Namespace,
 			Name:        instance.ListenersServiceNamespacedName().Name,
-			Labels:      appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), svc.ObjectMeta.Labels),
-			Annotations: svc.ObjectMeta.Annotations,
+			Labels:      appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), meta.Labels),
+			Annotations: meta.Annotations,
 		},
-		Spec: svc.Spec,
+		Spec: *spec,
 	}
 }
