@@ -70,6 +70,7 @@ func configDS() string {
 	`
 }
 
+//nolint:unparam
 func configListener(ty string, name string, enabled bool, bind string) string {
 	return fmt.Sprintf(`
 		listeners.%s.%s {
