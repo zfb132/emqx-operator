@@ -101,7 +101,9 @@ type Config struct {
 	// +kubebuilder:validation:Enum=Merge;Replace
 	// +kubebuilder:default=Merge
 	Mode string `json:"mode,omitempty"`
-	// EMQX config, HOCON format, like etc/emqx.conf file
+	// Bootstrap EMQX config, in HOCON format.
+	// This configuration will be supplied as `base.hocon` to the container, see respective
+	// [documentation](https://docs.emqx.com/en/emqx/latest/configuration/configuration.html#base-configuration-file).
 	Data string `json:"data,omitempty"`
 }
 
@@ -312,4 +314,8 @@ type ServiceTemplate struct {
 	// Spec defines the behavior of a service.
 	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	Spec corev1.ServiceSpec `json:"spec,omitempty"`
+}
+
+func (s *ServiceTemplate) IsEnabled() bool {
+	return s.Enabled != nil && *s.Enabled
 }

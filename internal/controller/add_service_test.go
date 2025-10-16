@@ -12,8 +12,8 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func loadConf(data string) *config.Conf {
-	conf, _ := config.EMQXConf(config.MergeDefaults(data))
+func loadConf(data string) *config.EMQX {
+	conf, _ := config.EMQXConfigWithDefaults(data)
 	return conf
 }
 
@@ -272,7 +272,7 @@ func TestGenerateListenersService(t *testing.T) {
 
 	t.Run("check ports", func(t *testing.T) {
 		emqx := &appsv2beta1.EMQX{}
-		conf, _ := config.EMQXConf(`
+		conf, _ := config.EMQXConfigWithDefaults(`
 		gateway.lwm2m.listeners.udp.default.bind = 5783
 		`)
 		got := generateListenerService(emqx, conf)

@@ -45,7 +45,7 @@ type reconcileRound struct {
 	ctx context.Context
 	log logr.Logger
 	// Populated by `loadConfig` reconciler:
-	conf *config.Conf
+	conf *config.EMQX
 	// Populated by `setupAPIRequester` reconciler:
 	requester apiRequester
 	// Populated by loadState reconciler:

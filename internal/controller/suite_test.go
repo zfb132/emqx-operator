@@ -62,7 +62,7 @@ var logger logr.Logger
 var timeout, interval time.Duration
 
 var emqxReconciler *EMQXReconciler
-var emqxConf *config.Conf
+var emqxConf *config.EMQX
 var emqx *appsv2beta1.EMQX = &appsv2beta1.EMQX{
 	ObjectMeta: metav1.ObjectMeta{
 		UID:  "fake-1234567890",
@@ -141,7 +141,7 @@ var _ = BeforeSuite(func() {
 	}()
 
 	emqxReconciler = NewEMQXReconciler(k8sManager)
-	emqxConf, err = config.EMQXConf(config.MergeDefaults(emqx.Spec.Config.Data))
+	emqxConf, err = config.EMQXConfigWithDefaults(emqx.Spec.Config.Data)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(emqxConf).ToNot(BeNil())
 })

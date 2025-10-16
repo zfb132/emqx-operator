@@ -11,7 +11,7 @@ type loadConfig struct {
 }
 
 func (l *loadConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
-	conf, err := config.EMQXConf(config.MergeDefaults(instance.Spec.Config.Data))
+	conf, err := config.EMQXConfigWithDefaults(instance.Spec.Config.Data)
 	if err != nil {
 		return subResult{
 			err: emperror.Wrap(err, "the .spec.config.data is not a valid HOCON config"),

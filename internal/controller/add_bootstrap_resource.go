@@ -6,12 +6,12 @@ import (
 	emperror "emperror.dev/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	"github.com/sethvargo/go-password/password"
 )
 
@@ -82,39 +82,13 @@ func (a *addBootstrap) readSecret(ctx context.Context, instance *appsv2beta1.EMQ
 func generateBootstrapAPIKeySecret(instance *appsv2beta1.EMQX, bootstrapAPIKeys string) *corev1.Secret {
 	defPassword, _ := password.Generate(64, 10, 0, true, true)
 	bootstrapAPIKeys += appsv2beta1.DefaultBootstrapAPIKey + ":" + defPassword
-	return &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Secret",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: instance.Namespace,
-			Name:      instance.BootstrapAPIKeyNamespacedName().Name,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), instance.Labels),
-		},
-		StringData: map[string]string{
-			"bootstrap_api_key": bootstrapAPIKeys,
-		},
-	}
+	return resources.BootstrapAPIKey(instance).Secret(bootstrapAPIKeys)
 }
 
-func generateNodeCookieSecret(instance *appsv2beta1.EMQX, conf *config.Conf) *corev1.Secret {
+func generateNodeCookieSecret(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Secret {
 	cookie := conf.GetNodeCookie()
 	if cookie == "" {
 		cookie, _ = password.Generate(64, 10, 0, true, true)
 	}
-	return &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Secret",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: instance.Namespace,
-			Name:      instance.NodeCookieNamespacedName().Name,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), instance.Labels),
-		},
-		StringData: map[string]string{
-			"node_cookie": cookie,
-		},
-	}
+	return resources.Cookie(instance).Secret(cookie)
 }

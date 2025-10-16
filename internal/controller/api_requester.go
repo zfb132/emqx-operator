@@ -95,7 +95,7 @@ func (b *apiRequesterBuilder) forPod(pod *corev1.Pod) req.RequesterInterface {
 }
 
 func newAPIRequesterBuilder(
-	conf *config.Conf,
+	conf *config.EMQX,
 	bootstrapAPIKey *corev1.Secret,
 ) (*apiRequesterBuilder, error) {
 	username, password, err := getAPICredentials(bootstrapAPIKey)

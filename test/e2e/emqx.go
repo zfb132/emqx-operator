@@ -103,18 +103,22 @@ func checkNodesStatusRevision(g Gomega, status appsv2beta1.EMQXNodesStatus, role
 
 func checkDSReplicationStatus(g Gomega, coreReplicas int) {
 	status := &appsv2beta1.DSReplicationStatus{}
+	replicationFactor := min(3, coreReplicas)
 	g.Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.dsReplication}")).
 		To(UnmarshalInto(&status), "Failed to get emqx status")
 	g.Expect(status.DBs).NotTo(BeEmpty(), "No DS database is present")
 	g.Expect(status.DBs).To(
 		HaveEach(And(
 			HaveField("Name", Not(BeEmpty())),
-			HaveField("NumShards", BeEquivalentTo(8)),
-			HaveField("NumShardReplicas", BeEquivalentTo(8*min(3, coreReplicas))),
+			HaveField("NumShards", Not(BeZero())),
+			HaveField("NumShardReplicas", Not(BeZero())),
+			Satisfy(func(db appsv2beta1.DSDBReplicationStatus) bool {
+				return db.NumShardReplicas == db.NumShards*int32(replicationFactor)
+			}),
 			HaveField("LostShardReplicas", BeEquivalentTo(0)),
 			HaveField("NumTransitions", BeEquivalentTo(0)),
-			HaveField("MinReplicas", BeEquivalentTo(min(3, coreReplicas))),
-			HaveField("MaxReplicas", BeEquivalentTo(min(3, coreReplicas))),
+			HaveField("MinReplicas", BeEquivalentTo(replicationFactor)),
+			HaveField("MaxReplicas", BeEquivalentTo(replicationFactor)),
 		)),
 		"EMQX DS databases are not replicated correctly across %d core nodes", coreReplicas,
 	)

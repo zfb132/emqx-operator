@@ -98,7 +98,10 @@ spec:
                 description: EMQX config
                 properties:
                   data:
-                    description: EMQX config, HOCON format, like etc/emqx.conf file
+                    description: |-
+                      Bootstrap EMQX config, in HOCON format.
+                      This configuration will be supplied as `base.hocon` to the container, see respective
+                      [documentation](https://docs.emqx.com/en/emqx/latest/configuration/configuration.html#base-configuration-file).
                     type: string
                   mode:
                     default: Merge

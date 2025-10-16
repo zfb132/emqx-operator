@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package config
 
 import (
 	"fmt"
@@ -23,18 +23,33 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lithammer/dedent"
 	"github.com/rory-z/go-hocon"
 	corev1 "k8s.io/api/core/v1"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 )
 
-type Conf struct {
-	config *hocon.Config
+const EMQXDefaults string = `
+### Minimal default configuration
+# This is generally provided by 'emqx.conf' but defined here instead, as 'emqx.conf' should now be empty.
+dashboard.listeners.http.bind = 18083
+
+### User-supplied configuration
+`
+
+type EMQX struct {
+	*hocon.Config
 }
 
-func EMQXConf(config string) (*Conf, error) {
-	c := &Conf{}
+func WithDefaults(config string) string {
+	return EMQXDefaults + config
+}
+
+func EMQXConfigWithDefaults(config string) (*EMQX, error) {
+	return EMQXConfig(WithDefaults(config))
+}
+
+func EMQXConfig(config string) (*EMQX, error) {
+	c := &EMQX{}
 	err := c.LoadEMQXConf(config)
 	if err != nil {
 		return nil, err
@@ -42,35 +57,35 @@ func EMQXConf(config string) (*Conf, error) {
 	return c, nil
 }
 
-func (c *Conf) LoadEMQXConf(config string) error {
+func (c *EMQX) LoadEMQXConf(config string) error {
 	hoconConfig, err := hocon.ParseString(config)
 	if err != nil {
 		return err
 	}
-	c.config = hoconConfig
+	c.Config = hoconConfig
 	return nil
 }
 
-func (c *Conf) Copy() *Conf {
+func (c *EMQX) Copy() *EMQX {
 	root := hocon.Object{}
-	return &Conf{
+	return &EMQX{
 		// Should deep-copy `c.config`.
-		config: root.ToConfig().WithFallback(c.config),
+		root.ToConfig().WithFallback(c.Config),
 	}
 }
 
-func (c *Conf) Print() string {
-	return c.config.String()
+func (c *EMQX) Print() string {
+	return c.String()
 }
 
-func (c *Conf) StripReadOnlyConfig() []string {
-	root := c.config.GetRoot().(hocon.Object)
+func (c *EMQX) StripReadOnlyConfig() []string {
+	root := c.GetRoot().(hocon.Object)
 	stripped := []string{}
 	for _, key := range []string{
+		// Explicitly considered read-only:
 		"node",
-		"cluster",
-		"dashboard",
 		"rpc",
+		// Effectively read-only, not changeable in runtime:
 		"durable_sessions",
 		"durable_storage",
 	} {
@@ -79,18 +94,32 @@ func (c *Conf) StripReadOnlyConfig() []string {
 			delete(root, key)
 		}
 	}
+	// Cluster configuration is also read-only, except for:
+	// * `cluster.links` is changeable in runtime.
+	if subrootValue, ok := root["cluster"]; ok {
+		subroot, ok := subrootValue.(hocon.Object)
+		if ok {
+			for key := range subroot {
+				if key == "links" {
+					continue
+				}
+				stripped = append(stripped, "cluster."+key)
+				delete(subroot, key)
+			}
+		}
+	}
 	return stripped
 }
 
-func (c *Conf) GetNodeCookie() string {
-	return toString(byDefault(c.config.Get("node.cookie"), ""))
+func (c *EMQX) GetNodeCookie() string {
+	return toString(byDefault(c.Get("node.cookie"), ""))
 }
 
-func (c *Conf) GetDashboardPortMap() map[string]int {
+func (c *EMQX) GetDashboardPortMap() map[string]int {
 	portMap := make(map[string]int)
 	portMap["dashboard"] = 18083 // default port
 
-	httpBind := byDefault(c.config.Get("dashboard.listeners.http.bind"), "")
+	httpBind := byDefault(c.Get("dashboard.listeners.http.bind"), "")
 	dashboardPort := toString(httpBind)
 	if dashboardPort != "" {
 		if !strings.Contains(dashboardPort, ":") {
@@ -107,7 +136,7 @@ func (c *Conf) GetDashboardPortMap() map[string]int {
 		}
 	}
 
-	httpsBind := byDefault(c.config.Get("dashboard.listeners.https.bind"), "")
+	httpsBind := byDefault(c.Get("dashboard.listeners.https.bind"), "")
 	dashboardHttpsPort := toString(httpsBind)
 	if dashboardHttpsPort != "" {
 		if !strings.Contains(dashboardHttpsPort, ":") {
@@ -127,7 +156,7 @@ func (c *Conf) GetDashboardPortMap() map[string]int {
 	return portMap
 }
 
-func (c *Conf) GetDashboardServicePort() []corev1.ServicePort {
+func (c *EMQX) GetDashboardServicePorts() []corev1.ServicePort {
 	portList := []corev1.ServicePort{}
 	portMap := c.GetDashboardPortMap()
 
@@ -147,11 +176,11 @@ func (c *Conf) GetDashboardServicePort() []corev1.ServicePort {
 	return portList
 }
 
-func (c *Conf) GetListenersServicePorts() []corev1.ServicePort {
+func (c *EMQX) GetListenersServicePorts() []corev1.ServicePort {
 	portList := []corev1.ServicePort{}
 
-	// Should be non-empty, see `mergeDefaultConfig`
-	for t, listener := range c.config.GetObject("listeners") {
+	// May be empty
+	for t, listener := range c.GetObject("listeners") {
 		if listener.Type() != hocon.ObjectType {
 			continue
 		}
@@ -186,7 +215,7 @@ func (c *Conf) GetListenersServicePorts() []corev1.ServicePort {
 	}
 
 	// Get gateway.lwm2m.listeners.udp.default.bind
-	for proto, gc := range c.config.GetObject("gateway") {
+	for proto, gc := range c.GetObject("gateway") {
 		gateway := gc.(hocon.Object)
 		// Compatible with "enable" and "enabled"
 		// the default value of them both is true
@@ -235,20 +264,6 @@ func (c *Conf) GetListenersServicePorts() []corev1.ServicePort {
 	})
 
 	return portList
-}
-
-func MergeDefaults(config string) string {
-	template := dedent.Dedent(`
-	# emqx-operator default config
-	listeners.tcp.default.bind = 1883
-	listeners.ssl.default.bind = 8883
-	listeners.ws.default.bind  = 8083
-	listeners.wss.default.bind = 8084
-
-	# user config
-	%s
-	`)
-	return fmt.Sprintf(template, config)
 }
 
 /* hocon.Config helper functions */
