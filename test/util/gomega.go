@@ -19,11 +19,25 @@ func HaveCondition(conditionType string, matcher types.GomegaMatcher) types.Gome
 	)
 }
 
+func HaveLabel(label string, matcher types.GomegaMatcher) types.GomegaMatcher {
+	return gomega.HaveField("Labels", gomega.HaveKeyWithValue(label, matcher))
+}
+
 func UnmarshalInto(v any) types.GomegaMatcher {
 	return gomega.WithTransform(
 		func(in string) error {
 			return json.Unmarshal([]byte(in), v)
 		},
 		gomega.Succeed(),
+	)
+}
+
+func BeUnmarshalledAs(v any, matcher types.GomegaMatcher) types.GomegaMatcher {
+	return gomega.WithTransform(
+		func(in string) (any, error) {
+			err := json.Unmarshal([]byte(in), &v)
+			return v, err
+		},
+		gomega.HaveValue(matcher),
 	)
 }

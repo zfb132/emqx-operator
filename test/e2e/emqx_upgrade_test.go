@@ -71,7 +71,7 @@ var _ = Describe("EMQX Upgrade Test", Ordered, func() {
 			withImage(emqxImageInitial),
 			withCores(coreReplicas),
 			withReplicants(replicantReplicas),
-			withDS(),
+			withConfig(configDS()),
 		)
 		Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
 		By("wait for EMQX cluster to be ready")

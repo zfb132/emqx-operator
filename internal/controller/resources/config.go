@@ -24,7 +24,7 @@ func (from emqxConfigResource) ConfigMap() *corev1.ConfigMap {
 	// NOTE
 	// Providing empty 'emqx.conf' to make sure no user-defined configuration is ignored or
 	// overridden during restarts.
-	baseConfigData := config.WithDefaults(from.Spec.Config.Data)
+	baseConfigData := from.BaseConfig()
 	emqxConfData := ""
 	return from.ConfigMapWithData(baseConfigData, emqxConfData)
 }
@@ -45,6 +45,14 @@ func (from emqxConfigResource) ConfigMapWithData(baseConfigData string, override
 			OverridesConfigFile: overridesConfigData,
 		},
 	}
+}
+
+func (from emqxConfigResource) BaseConfig() string {
+	return config.WithDefaults(from.Spec.Config.Data)
+}
+
+func (from emqxConfigResource) DiffersFrom(configMap *corev1.ConfigMap) bool {
+	return configMap.Data[BaseConfigFile] != from.BaseConfig() || configMap.Data[OverridesConfigFile] != ""
 }
 
 func (emqxConfigResource) VolumeMounts() []corev1.VolumeMount {
