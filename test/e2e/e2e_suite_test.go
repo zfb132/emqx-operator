@@ -118,7 +118,8 @@ var _ = AfterSuite(func() {
 func PrintDiagnosticReport(namespace string) {
 	controllerLogs, err := util.KubectlOut("logs",
 		"--selector", "control-plane=controller-manager",
-		"--namespace", namespace)
+		"--namespace", namespace,
+		"--tail", "-1")
 	if err == nil {
 		GinkgoWriter.Print("Controller logs:\n", controllerLogs)
 	} else {
