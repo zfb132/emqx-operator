@@ -75,7 +75,60 @@ func (c *EMQX) Copy() *EMQX {
 }
 
 func (c *EMQX) Print() string {
-	return c.String()
+	return printObject(c.GetRoot().(hocon.Object), true)
+}
+
+func printValue(v hocon.Value) string {
+	switch v.Type() {
+	case hocon.ObjectType:
+		return printObject(v.(hocon.Object), false)
+	case hocon.ArrayType:
+		return printArray(v.(hocon.Array))
+	default:
+		return v.String()
+	}
+}
+
+func printObject(o hocon.Object, root bool) string {
+	builder := strings.Builder{}
+	n := len(o)
+	if !root {
+		builder.WriteString("{")
+	}
+	keys := make([]string, 0, n)
+	for k := range o {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for i, key := range keys {
+		value := o[key]
+		builder.WriteString(key)
+		if value.Type() != hocon.ObjectType {
+			builder.WriteString(" = ")
+		} else {
+			builder.WriteString(" ")
+		}
+		builder.WriteString(printValue(value))
+		if i < n-1 {
+			builder.WriteString(", ")
+		}
+	}
+	if !root {
+		builder.WriteString("}")
+	}
+	return builder.String()
+}
+
+func printArray(a hocon.Array) string {
+	var builder strings.Builder
+	builder.WriteString("[")
+	builder.WriteString(a[0].String())
+	for _, value := range a[1:] {
+		builder.WriteString(", ")
+		builder.WriteString(value.String())
+	}
+	builder.WriteString("]")
+	return builder.String()
 }
 
 func (c *EMQX) StripReadOnlyConfig() []string {

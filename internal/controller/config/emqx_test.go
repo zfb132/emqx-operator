@@ -306,3 +306,39 @@ func TestGetListenersServicePorts(t *testing.T) {
 		}, got)
 	})
 }
+
+func TestPrint(t *testing.T) {
+	t.Run("empty config", func(t *testing.T) {
+		config, err := EMQXConfig("")
+		assert.Nil(t, err)
+		got := config.Print()
+		assert.Equal(t, "", got)
+	})
+
+	t.Run("arrays", func(t *testing.T) {
+		config, err := EMQXConfig(`
+			node.name = "emqx@127.0.0.1"
+			cluster.core_nodes = ["emqx@node1.emqx.io", "emqx@node2.emqx.io"]
+		`)
+		assert.Nil(t, err)
+		got := config.Print()
+		expected := `cluster {core_nodes = ["emqx@node1.emqx.io", "emqx@node2.emqx.io"]}, node {name = "emqx@127.0.0.1"}`
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("complex nested structure", func(t *testing.T) {
+		config, err := EMQXConfig(`
+			durable_sessions.enable = true
+			gateway.coap.listeners.udp.default.bind = 5683
+			gateway.coap.listeners.dtls.default.bind = 5684
+			listeners.tcp.default.bind = 1883
+			listeners.ssl.default.bind = 8883
+			dashboard.listeners.http.bind = 18083
+			dashboard.listeners.https.bind = 18084
+		`)
+		assert.Nil(t, err)
+		got := config.Print()
+		expected := `dashboard {listeners {http {bind = 18083}, https {bind = 18084}}}, durable_sessions {enable = true}, gateway {coap {listeners {dtls {default {bind = 5684}}, udp {default {bind = 5683}}}}}, listeners {ssl {default {bind = 8883}}, tcp {default {bind = 1883}}}`
+		assert.Equal(t, expected, got)
+	})
+}
