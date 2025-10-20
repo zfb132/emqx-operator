@@ -19,12 +19,37 @@ type syncConfig struct {
 }
 
 func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	// Fetch desired / applied configuration.
+	confSpec := instance.Spec.Config.Data
+	confLast := lastAppliedConfig(instance)
+
+	// Do not try to update not-really-changeable configuration options.
+	conf := confSpec
+	stripped := []string{}
+	if confLast != "" {
+		c, _ := config.EMQXConfig(conf)
+		if c != nil {
+			for _, path := range []string{
+				"dashboard.listeners.http.bind",
+				"dashboard.listeners.https.bind",
+			} {
+				if c.Strip(path) {
+					stripped = append(stripped, path)
+				}
+			}
+			if len(stripped) > 0 {
+				conf = c.Print()
+			}
+		}
+	}
+
 	// Make sure the config map exists
 	resource := resources.EMQXConfig(instance)
+	confWithDefaults := config.WithDefaults(conf)
 	configMap := &corev1.ConfigMap{}
 	err := s.Client.Get(r.ctx, resource.ConfigsNamespacedName(), configMap)
 	if err != nil && k8sErrors.IsNotFound(err) {
-		configMap = resource.ConfigMap()
+		configMap = resource.ConfigMap(confWithDefaults)
 		if err := ctrl.SetControllerReference(instance, configMap, s.Scheme); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to set controller reference for configMap")}
 		}
@@ -39,56 +64,60 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 
 	// If the config is different, update the config right away.
 	// Assuming the config is valid, otherwise master controller would bail out.
-	if resource.DiffersFrom(configMap) {
-		configMap = resource.ConfigMap()
+	if configMap.Data[resources.BaseConfigFile] != confWithDefaults {
+		configMap = resource.ConfigMap(confWithDefaults)
 		r.log.V(1).Info("updating config resource", "configMap", klog.KObj(configMap))
 		if err := s.Client.Update(r.ctx, configMap); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update configMap")}
 		}
+		if len(stripped) > 0 {
+			s.EventRecorder.Event(
+				instance,
+				corev1.EventTypeNormal, "PartialConfigUpdate",
+				fmt.Sprintf("Skipped unchangeable entries: %v", stripped),
+			)
+		}
 	}
-
-	confStr := resource.BaseConfig()
-	lastConfStr, ok := instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey]
 
 	// If the annotation is not set, set it to the current config and return.
 	// This reconciler is apparently running for the first time.
-	if !ok {
-		if instance.Annotations == nil {
-			instance.Annotations = map[string]string{}
-		}
-		instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey] = confStr
+	if confLast == "" {
+		reflectLastAppliedConfig(instance, conf)
 		if err := s.Client.Update(r.ctx, instance); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update emqx instance annotation")}
 		}
 		return subResult{}
 	}
 
-	// If the annotation is set, and the config is different, update the config.
-	if lastConfStr != confStr {
-		if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
-			return subResult{}
-		}
+	// Postpone runtime config updates until ready.
+	if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
+		return subResult{}
+	}
 
+	// If the annotation is set, and the config is different, update the config.
+	if confLast != conf {
 		// Delete readonly configs
-		conf, err := config.EMQXConfig(confStr)
-		if err != nil {
+		c, err := config.EMQXConfig(confWithDefaults)
+		if err != nil || c == nil {
 			return subResult{err: emperror.Wrap(err, "failed to parse .spec.config.data")}
 		}
-		stripped := conf.StripReadOnlyConfig()
-		if len(stripped) > 0 {
+		strippedReadonly := c.StripReadOnlyConfig()
+		confRuntime := c.Print()
+
+		// Update the config through API
+		r.log.V(1).Info("applying runtime config", "config", confRuntime)
+		if err := api.UpdateConfigs(r.oldestCoreRequester(), instance.Spec.Config.Mode, confRuntime); err != nil {
+			return subResult{err: emperror.Wrap(err, "failed to update emqx config through API")}
+		}
+		if len(strippedReadonly) > 0 {
 			s.EventRecorder.Event(
 				instance,
-				corev1.EventTypeNormal, "WontUpdateReadOnlyConfig",
-				fmt.Sprintf("Stripped readonly config entries, will not be updated: %v", stripped),
+				corev1.EventTypeNormal, "PartialRuntimeConfigUpdate",
+				fmt.Sprintf("Skipped readonly entries: %v", strippedReadonly),
 			)
 		}
 
-		r.log.V(1).Info("applying runtime config", "config", conf.Print())
-		if err := api.UpdateConfigs(r.oldestCoreRequester(), instance.Spec.Config.Mode, conf.Print()); err != nil {
-			return subResult{err: emperror.Wrap(err, "failed to update emqx config through API")}
-		}
-
-		instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey] = confStr
+		reflectLastAppliedConfig(instance, conf)
 		if err := s.Client.Update(r.ctx, instance); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update emqx instance annotation")}
 		}
@@ -97,13 +126,27 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	return subResult{}
 }
 
-func applicableConfig(instance *appsv2beta1.EMQX) string {
-	// If the annotation is set, use it: most of the time it's the config currently in use.
+func reflectLastAppliedConfig(instance *appsv2beta1.EMQX, confStr string) {
+	if instance.Annotations == nil {
+		instance.Annotations = map[string]string{}
+	}
+	instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey] = confStr
+}
+
+func lastAppliedConfig(instance *appsv2beta1.EMQX) string {
 	if instance.Annotations != nil {
-		if config := instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey]; config != "" {
-			return config
+		if confStr := instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey]; confStr != "" {
+			return confStr
 		}
 	}
+	return ""
+}
+
+func applicableConfig(instance *appsv2beta1.EMQX) string {
+	// If the annotation is set, use it: most of the time it's the config currently in use.
+	if confStr := lastAppliedConfig(instance); confStr != "" {
+		return config.WithDefaults(confStr)
+	}
 	// If not, running for the first time, use spec's config.
-	return instance.Spec.Config.Data
+	return config.WithDefaults(instance.Spec.Config.Data)
 }

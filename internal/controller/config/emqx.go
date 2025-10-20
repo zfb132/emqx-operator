@@ -164,6 +164,25 @@ func (c *EMQX) StripReadOnlyConfig() []string {
 	return stripped
 }
 
+func (c *EMQX) Strip(path string) bool {
+	object := c.GetRoot().(hocon.Object)
+	keys := strings.Split(path, ".")
+	l := len(keys)
+	for i, key := range keys {
+		value, ok := object[key]
+		if !ok {
+			return false
+		}
+		if i == l-1 {
+			delete(object, key)
+			return true
+		} else {
+			object = value.(hocon.Object)
+		}
+	}
+	return false
+}
+
 func (c *EMQX) GetNodeCookie() string {
 	return toString(byDefault(c.Get("node.cookie"), ""))
 }

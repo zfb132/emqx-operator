@@ -206,7 +206,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				configListener("quic", "default", true, "14567"),
 				configListener("ws", "default", false, "0"),
 				configListener("wss", "default", false, "0"),
-				// And also change where EMQX API is served
+				// And also change dashboard config, should be skipped:
 				"dashboard.listeners.http { bind = 28083, num_acceptors = 1 }",
 			))
 			Expect(Kubectl("patch", "emqx", "emqx",
