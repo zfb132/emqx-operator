@@ -168,17 +168,28 @@ func (c *EMQX) Strip(path string) bool {
 	object := c.GetRoot().(hocon.Object)
 	keys := strings.Split(path, ".")
 	l := len(keys)
-	for i, key := range keys {
-		value, ok := object[key]
-		if !ok {
-			return false
-		}
-		if i == l-1 {
+	if l > 0 {
+		return stripRecursive(object, keys, 0, l)
+	}
+	return false
+}
+
+func stripRecursive(object hocon.Object, keys []string, i int, l int) bool {
+	key := keys[i]
+	val, ok := object[key]
+	if !ok {
+		return false
+	}
+	if i == l-1 {
+		delete(object, key)
+		return true
+	}
+	inner, ok := val.(hocon.Object)
+	if ok && stripRecursive(inner, keys, i+1, l) {
+		if len(inner) == 0 {
 			delete(object, key)
-			return true
-		} else {
-			object = value.(hocon.Object)
 		}
+		return true
 	}
 	return false
 }

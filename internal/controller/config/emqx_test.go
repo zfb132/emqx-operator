@@ -342,3 +342,43 @@ func TestPrint(t *testing.T) {
 		assert.Equal(t, expected, got)
 	})
 }
+
+func TestStrip(t *testing.T) {
+	t.Run("empty config", func(t *testing.T) {
+		config, err := EMQXConfig("")
+		assert.Nil(t, err)
+		got := config.Strip("dashboard.listeners.http.bind")
+		assert.Equal(t, got, false)
+		assert.Equal(t, config.Print(), "")
+	})
+
+	t.Run("delete non-existent key", func(t *testing.T) {
+		config, err := EMQXConfig(`
+		dashboard.listeners.http.bind = 18083
+		`)
+		assert.Nil(t, err)
+		got := config.Strip("dashboard.config.file")
+		assert.Equal(t, got, false)
+		assert.Equal(t, config.Print(), `dashboard {listeners {http {bind = 18083}}}`)
+	})
+
+	t.Run("delete whole root", func(t *testing.T) {
+		config, err := EMQXConfig(`
+		dashboard.listeners { http.bind = 18083, https.bind = 18084 }
+		`)
+		assert.Nil(t, err)
+		got := config.Strip("dashboard")
+		assert.Equal(t, got, true)
+		assert.Equal(t, config.Print(), "")
+	})
+
+	t.Run("delete empty leftover objects", func(t *testing.T) {
+		config, err := EMQXConfig(`
+		dashboard.listeners { http.bind = 18083, https.bind = 18084 }
+		`)
+		assert.Nil(t, err)
+		got := config.Strip("dashboard.listeners.https.bind")
+		assert.Equal(t, got, true)
+		assert.Equal(t, config.Print(), `dashboard {listeners {http {bind = 18083}}}`)
+	})
+}
