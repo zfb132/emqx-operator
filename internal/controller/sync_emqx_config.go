@@ -108,6 +108,9 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		if err := s.Client.Update(r.ctx, instance); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update emqx instance annotation")}
 		}
+
+		// Restart reconciliation loop with consistent reconcile state.
+		return subResult{result: ctrl.Result{Requeue: true}}
 	}
 
 	return subResult{}
