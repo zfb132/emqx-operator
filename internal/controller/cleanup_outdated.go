@@ -9,56 +9,55 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type syncSets struct {
+type cleanupOutdatedSets struct {
 	*EMQXReconciler
 }
 
-func (s *syncSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (s *cleanupOutdatedSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+	// Postpone cleanups until the instance is ready:
 	if !instance.Status.IsConditionTrue(appsv2beta1.Ready) {
 		return subResult{}
 	}
 
+	// List outdated replicantSets, preserving order by creation timestamp:
 	currentRs := r.state.currentReplicantSet(instance)
 	updateRs := r.state.updateReplicantSet(instance)
-	oldRsList := []*appsv1.ReplicaSet{}
+	prevRsList := []*appsv1.ReplicaSet{}
 	for _, rs := range r.state.replicantSets {
-		if rs != currentRs && rs != updateRs {
-			oldRsList = append(oldRsList, rs)
+		if rs.DeletionTimestamp == nil && rs != currentRs && rs != updateRs {
+			prevRsList = append(prevRsList, rs)
 		}
 	}
 
-	rsOutdated := len(oldRsList) - int(instance.Spec.RevisionHistoryLimit)
+	rsOutdated := len(prevRsList) - int(instance.Spec.RevisionHistoryLimit)
 	for i := 0; i < rsOutdated; i++ {
-		rs := oldRsList[i]
+		rs := prevRsList[i]
 		// Avoid delete replica set with non-zero replica counts
-		if rs.Status.Replicas != 0 || *(rs.Spec.Replicas) != 0 || rs.Generation > rs.Status.ObservedGeneration || rs.DeletionTimestamp != nil {
+		if rs.Status.Replicas != 0 || *(rs.Spec.Replicas) != 0 || rs.Generation > rs.Status.ObservedGeneration {
 			continue
 		}
-		r.log.Info("trying to cleanup replicaSet for EMQX", "replicaSet", klog.KObj(rs), "EMQX", klog.KObj(instance))
+		r.log.Info("removing outdated replicantSet", "replicaSet", klog.KObj(rs))
 		if err := s.Client.Delete(r.ctx, rs); err != nil && !k8sErrors.IsNotFound(err) {
 			return subResult{err: err}
 		}
 	}
 
+	// List outdated coreSets, preserving order by creation timestamp:
 	currentSts := r.state.currentCoreSet(instance)
 	updateSts := r.state.updateCoreSet(instance)
-	oldStsList := []*appsv1.StatefulSet{}
+	prevStsList := []*appsv1.StatefulSet{}
 	for _, sts := range r.state.coreSets {
-		if sts != currentSts && sts != updateSts {
-			oldStsList = append(oldStsList, sts)
+		if sts.DeletionTimestamp == nil && sts != currentSts && sts != updateSts {
+			prevStsList = append(prevStsList, sts)
 		}
 	}
 
-	stsOutdated := len(oldStsList) - int(instance.Spec.RevisionHistoryLimit)
+	stsOutdated := len(prevStsList) - int(instance.Spec.RevisionHistoryLimit)
 	for i := 0; i < stsOutdated; i++ {
-		sts := oldStsList[i]
+		sts := prevStsList[i]
 		// Avoid delete stateful set with non-zero replica counts
-		if sts.Status.Replicas != 0 || *(sts.Spec.Replicas) != 0 || sts.Generation > sts.Status.ObservedGeneration || sts.DeletionTimestamp != nil {
+		if sts.Status.Replicas != 0 || *(sts.Spec.Replicas) != 0 || sts.Generation > sts.Status.ObservedGeneration {
 			continue
-		}
-		r.log.Info("trying to cleanup statefulSet for EMQX", "statefulSet", klog.KObj(sts), "EMQX", klog.KObj(instance))
-		if err := s.Client.Delete(r.ctx, sts); err != nil && !k8sErrors.IsNotFound(err) {
-			return subResult{err: err}
 		}
 
 		// Delete PVCs
@@ -67,17 +66,25 @@ func (s *syncSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subR
 			client.InNamespace(instance.Namespace),
 			client.MatchingLabels(sts.Spec.Selector.MatchLabels),
 		)
-
 		for _, p := range pvcList.Items {
 			pvc := p.DeepCopy()
 			if pvc.DeletionTimestamp != nil {
 				continue
 			}
-			r.log.Info("trying to cleanup persistentVolumeClaim for EMQX", "persistentVolumeClaim", klog.KObj(pvc), "EMQX", klog.KObj(instance))
+			r.log.Info("removing persistentVolumeClaim of outdated coreSet",
+				"persistentVolumeClaim", klog.KObj(pvc),
+				"coreSet", klog.KObj(sts),
+			)
 			if err := s.Client.Delete(r.ctx, pvc); err != nil && !k8sErrors.IsNotFound(err) {
 				return subResult{err: err}
 			}
 		}
+
+		r.log.Info("removing outdated coreSet", "statefulSet", klog.KObj(sts))
+		if err := s.Client.Delete(r.ctx, sts); err != nil && !k8sErrors.IsNotFound(err) {
+			return subResult{err: err}
+		}
+
 	}
 
 	return subResult{}

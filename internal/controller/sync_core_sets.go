@@ -150,8 +150,10 @@ func (s *syncCoreSets) chooseScaleDownCore(
 			break
 		}
 	}
+
+	// If the cluster lacks information about the node, there's very likely nothing to migrate.
 	if scaleDownNode == nil {
-		return scaleDownCore{}, emperror.Errorf("node is missing for pod %s", scaleDownPod.Name)
+		return scaleDownCore{Pod: scaleDownPod, Reason: "node is out of cluster"}, nil
 	}
 
 	// Scale down the node that is already stopped.

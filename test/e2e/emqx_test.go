@@ -243,6 +243,121 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 		})
 	})
 
+	Context("EMQX Cluster / Botched Blue-Green Updates", func() {
+		// Initial number of core replicas:
+		var coreReplicas int = 2
+
+		It("deploy cluster", func() {
+			By("create EMQX cluster")
+			emqxCR := PatchDocument(
+				FromYAMLFile(emqxCRBasic),
+				withImage(emqxImage),
+				withCores(coreReplicas),
+				withConfig(),
+			)
+			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
+			By("wait for EMQX cluster to be ready")
+			Eventually(checkEMQXReady).Should(Succeed())
+			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
+		})
+
+		It("trigger botched blue-green updates", func() {
+			By("create MQTT workload")
+			Expect(Kubectl("apply", "-f", "test/e2e/files/resources/mqttx.yaml")).To(Succeed())
+			defer Kubectl("delete", "-f", "test/e2e/files/resources/mqttx.yaml")
+			Expect(Kubectl("wait", "pod",
+				"--selector=app=mqttx",
+				"--for=condition=Ready",
+				"--timeout=1m",
+			)).To(Succeed(), "Timed out waiting MQTTX to be ready")
+
+			By("decrease revision history limit")
+			Expect(Kubectl("patch", "emqx", "emqx",
+				"--type", "json",
+				"--patch", `[
+					{"op": "replace", "path": "/spec/revisionHistoryLimit", "value": 1}
+				]`)).
+				To(Succeed())
+
+			By("lookup initial EMQX status")
+			var statusInitial appsv2beta1.EMQXNodesStatus
+			Eventually(checkEMQXReady).Should(Succeed())
+			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
+				To(UnmarshalInto(&statusInitial))
+
+			By("specify incorrect EMQX image")
+			coreReplicas = 1
+			changedAt1 := metav1.Now()
+			Expect(Kubectl("patch", "emqx", "emqx",
+				"--type", "json",
+				"--patch", `[
+					{"op": "replace", "path": "/spec/coreTemplate/spec/replicas", "value": 1},
+					{"op": "replace", "path": "/spec/image", "value": "emqx/emqx:5.Y.ZZZ"}
+				]`)).
+				To(Succeed())
+			Consistently(checkEMQXReady, "30s", "3s").WithArguments(changedAt1).Should(Not(Succeed()))
+			var status1 appsv2beta1.EMQXNodesStatus
+			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
+				To(UnmarshalInto(&status1))
+
+			By("specify broken EMQX config")
+			changedAt2 := metav1.Now()
+			configBroken := string(intoJsonString("broker { no.such.config { k = v } }"))
+			Expect(Kubectl("patch", "emqx", "emqx",
+				"--type", "json",
+				"--patch", `[
+					{"op": "replace", "path": "/spec/config/data", "value": `+configBroken+`},
+					{"op": "replace", "path": "/spec/image", "value": "`+emqxImageUpgrade+`"},
+				]`)).
+				To(Succeed())
+			Consistently(checkEMQXReady, "30s", "3s").WithArguments(changedAt2).Should(Not(Succeed()))
+			var status2 appsv2beta1.EMQXNodesStatus
+			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
+				To(UnmarshalInto(&status2))
+
+			By("verify current sets have not changed")
+			var status appsv2beta1.EMQXNodesStatus
+			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
+				To(BeUnmarshalledAs(&status, And(
+					HaveField("CurrentRevision", Equal(statusInitial.CurrentRevision)),
+					HaveField("CurrentReplicas", Equal(statusInitial.CurrentReplicas)),
+					HaveField("ReadyReplicas", Equal(statusInitial.CurrentReplicas)),
+				)))
+
+			By("specify correct EMQX config")
+			changedAt3 := metav1.Now()
+			imageForceChange := "docker.io/" + emqxImageUpgrade
+			Expect(Kubectl("patch", "emqx", "emqx",
+				"--type", "json",
+				"--patch", `[
+					{"op": "replace", "path": "/spec/config/data", "value": ""},
+					{"op": "replace", "path": "/spec/image", "value": "`+imageForceChange+`"},
+				]`)).
+				To(Succeed())
+			Eventually(checkEMQXReady).WithArguments(changedAt3).Should(Succeed())
+			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
+
+			var stsList appsv1.StatefulSetList
+			Eventually(KubectlOut).WithArguments("get", "statefulset",
+				"--selector", appsv2beta1.LabelsInstanceKey+"=emqx",
+				"-o", "json",
+			).Should(BeUnmarshalledAs(&stsList, HaveField("Items",
+				// Current (same as update) + 1 outdated
+				HaveLen(2),
+			)))
+			Expect(stsList.Items).To(And(
+				// First botched coreSet should be cleaned
+				Not(ContainElement(HaveLabel(appsv2beta1.LabelsPodTemplateHashKey, Equal(status1.UpdateRevision)))),
+				// Second botched coreSet should be preserved as part of revision history
+				ContainElement(HaveLabel(appsv2beta1.LabelsPodTemplateHashKey, Equal(status2.UpdateRevision))),
+			))
+		})
+
+		It("delete cluster", func() {
+			Expect(Kubectl("delete", "emqx", "emqx")).To(Succeed())
+		})
+	})
+
 	Context("EMQX Core-Replicant Cluster", func() {
 		// Initial number of core and replicant replicas:
 		var coreReplicas int = 1

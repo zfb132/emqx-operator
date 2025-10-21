@@ -16,15 +16,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Reconciler syncSets", func() {
-	var s *syncSets
+var _ = Describe("Reconciler cleanupOutdatedSets", func() {
+	var s *cleanupOutdatedSets
 
 	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
 	var ns *corev1.Namespace = &corev1.Namespace{}
 	var round *reconcileRound
 
 	BeforeEach(func() {
-		s = &syncSets{emqxReconciler}
+		s = &cleanupOutdatedSets{emqxReconciler}
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "controller-v2beta1-sync-sets-test-" + rand.String(5),

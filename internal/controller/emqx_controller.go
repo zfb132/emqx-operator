@@ -138,7 +138,7 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		&dsReflectPodCondition{r},
 		&syncReplicantSets{r},
 		&syncCoreSets{r},
-		&syncSets{r},
+		&cleanupOutdatedSets{r},
 		&dsCleanupSites{r},
 	} {
 		round.log = logger.WithValues("reconciler", subReconcilerName(subReconciler))
