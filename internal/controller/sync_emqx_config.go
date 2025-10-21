@@ -27,27 +27,14 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	conf := confSpec
 	stripped := []string{}
 	if confLast != "" {
-		c, _ := config.EMQXConfig(conf)
-		if c != nil {
-			for _, path := range []string{
-				"dashboard.listeners.http.bind",
-				"dashboard.listeners.https.bind",
-			} {
-				if c.Strip(path) {
-					stripped = append(stripped, path)
-				}
-			}
-			if len(stripped) > 0 {
-				conf = c.Print()
-			}
-		}
+		conf, stripped = stripNonChangeableConfig(confSpec, confLast)
 	}
 
 	// Make sure the config map exists
 	resource := resources.EMQXConfig(instance)
 	confWithDefaults := config.WithDefaults(conf)
 	configMap := &corev1.ConfigMap{}
-	err := s.Client.Get(r.ctx, resource.ConfigsNamespacedName(), configMap)
+	err := s.Client.Get(r.ctx, instance.ConfigsNamespacedName(), configMap)
 	if err != nil && k8sErrors.IsNotFound(err) {
 		configMap = resource.ConfigMap(confWithDefaults)
 		if err := ctrl.SetControllerReference(instance, configMap, s.Scheme); err != nil {
@@ -124,6 +111,36 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	}
 
 	return subResult{}
+}
+
+func stripNonChangeableConfig(confDesired string, confLast string) (string, []string) {
+	// Operator relies on Dashboard listener to access EMQX API.
+	// Changing the dashboard listener port is too finicky to allow it, so we strip
+	// any changes to previously configured dashboard listener port, either `http` or
+	// `https`, whichever is currently configured.
+	var dashboardConfigPaths = []string{
+		"dashboard.listeners.http.bind",
+		"dashboard.listeners.https.bind",
+	}
+	var stripped = []string{}
+	cd, _ := config.EMQXConfig(confDesired)
+	cl, _ := config.EMQXConfig(confLast)
+	if cd != nil && cl != nil {
+		for _, path := range dashboardConfigPaths {
+			vd := cd.Get(path)
+			vl := cl.Get(path)
+			// Disallow changing if following conditions are met:
+			// * Desired is configured and was configured previously (but not "0", i.e. disabled)
+			// * Desired is different from previous value
+			// Otherwise, listener is being enabled, which should be allowed.
+			if vd != nil && vl != nil && vl.String() != "0" && vd.String() != vl.String() {
+				_ = cd.Strip(path)
+				stripped = append(stripped, path)
+				return cd.Print(), stripped
+			}
+		}
+	}
+	return confDesired, stripped
 }
 
 func reflectLastAppliedConfig(instance *appsv2beta1.EMQX, confStr string) {
