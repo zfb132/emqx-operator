@@ -1,10 +1,14 @@
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	. "github.com/emqx/emqx-operator/test/util"
+	"github.com/lithammer/dedent"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,19 +34,50 @@ func withImage(image string) []byte {
 	return fmt.Appendf(nil, `{"spec": {"image": "%s"}}`, image)
 }
 
-func withDS() []byte {
-	return FromYAML([]byte(`
-spec:
-  config:
-    data: |
-      license { key = "evaluation" }
-      durable_sessions { enable = true }
-      durable_storage { 
-        messages {
-          backend = builtin_raft
-          n_shards = 8
-        }
-      }`))
+func withConfig(snippets ...string) []byte {
+	defaults := []string{configLicense(), configConsoleLog("info")}
+	config := slices.Concat(defaults, snippets)
+	return fmt.Appendf(nil, `{"spec": {"config": {"data": %s}}}`, intoJsonString(config...))
+}
+
+func intoJsonString(snippets ...string) []byte {
+	configStr := dedent.Dedent(strings.Join(snippets, ""))
+	jsonStr, _ := json.Marshal(configStr)
+	return jsonStr
+}
+
+func configLicense() string {
+	return `
+		license { key = "evaluation" }
+	`
+}
+
+func configConsoleLog(level string) string {
+	return `
+		log.console { level = "` + level + `" }
+	`
+}
+
+func configDS() string {
+	return `
+		durable_sessions { enable = true }
+		durable_storage { 
+			messages {
+				backend = builtin_raft
+				n_shards = 8
+			}
+		}
+	`
+}
+
+//nolint:unparam
+func configListener(ty string, name string, enabled bool, bind string) string {
+	return fmt.Sprintf(`
+		listeners.%s.%s {
+			enabled = %t
+			bind = "%s"
+		}
+	`, ty, name, enabled, bind)
 }
 
 //nolint:errcheck
@@ -100,6 +135,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				FromYAMLFile(emqxCRBasic),
 				withImage(emqxImage),
 				withCores(coreReplicas),
+				withConfig(),
 			)
 			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
 			By("wait for EMQX cluster to be ready")
@@ -162,6 +198,45 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			Expect(out).To(Equal("0"))
 		})
 
+		It("change config", func() {
+			By("change EMQX config")
+			configChange := string(intoJsonString(
+				// Change listener ports:
+				configListener("tcp", "default", true, "11883"),
+				configListener("quic", "default", true, "14567"),
+				configListener("ws", "default", false, "0"),
+				configListener("wss", "default", false, "0"),
+				// And also change dashboard config, should be skipped:
+				"dashboard.listeners.http { bind = 28083, num_acceptors = 1 }",
+			))
+			Expect(Kubectl("patch", "emqx", "emqx",
+				"--type", "json",
+				"--patch", `[{"op": "replace", "path": "/spec/config/data", "value": `+configChange+`}]`)).
+				To(Succeed())
+			By("wait for EMQX cluster to be ready")
+			Eventually(checkEMQXReady).Should(Succeed())
+			By("wait for services to be updated")
+			var servicePorts []corev1.ServicePort
+			Eventually(KubectlOut).WithArguments("get", "service", "emqx-listeners", "-o", "jsonpath={.spec.ports}").
+				Should(BeUnmarshalledAs(&servicePorts, ConsistOf(
+					And(
+						HaveField("Name", Equal("tcp-default")),
+						HaveField("Port", Equal(int32(11883))),
+						HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+					),
+					And(
+						HaveField("Name", Equal("ssl-default")),
+						HaveField("Port", Equal(int32(8883))),
+						HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+					),
+					And(
+						HaveField("Name", Equal("quic-default")),
+						HaveField("Port", Equal(int32(14567))),
+						HaveField("Protocol", Equal(corev1.ProtocolUDP)),
+					),
+				)))
+		})
+
 		It("delete cluster", func() {
 			Expect(Kubectl("delete", "emqx", "emqx")).To(Succeed())
 			Expect(Kubectl("get", "emqx", "emqx")).To(HaveOccurred(), "EMQX cluster still exists")
@@ -180,6 +255,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				withImage(emqxImage),
 				withCores(coreReplicas),
 				withReplicants(replicantReplicas),
+				withConfig(),
 			)
 			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
 			By("wait for EMQX cluster to be ready")
@@ -284,7 +360,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				withImage(emqxImage),
 				withCores(coreReplicas),
 				withReplicants(replicantReplicas),
-				withDS(),
+				withConfig(configDS()),
 			)
 			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
 

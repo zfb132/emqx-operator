@@ -2,7 +2,6 @@ package controller
 
 import (
 	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
-	"github.com/emqx/emqx-operator/internal/controller/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -20,16 +19,10 @@ func EMQXConfig(instance *appsv2beta1.EMQX) emqxConfigResource {
 	return emqxConfigResource{instance}
 }
 
-func (from emqxConfigResource) ConfigMap() *corev1.ConfigMap {
+func (from emqxConfigResource) ConfigMap(baseConfig string) *corev1.ConfigMap {
 	// NOTE
 	// Providing empty 'emqx.conf' to make sure no user-defined configuration is ignored or
 	// overridden during restarts.
-	baseConfigData := config.WithDefaults(from.Spec.Config.Data)
-	emqxConfData := ""
-	return from.ConfigMapWithData(baseConfigData, emqxConfData)
-}
-
-func (from emqxConfigResource) ConfigMapWithData(baseConfigData string, overridesConfigData string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -41,8 +34,8 @@ func (from emqxConfigResource) ConfigMapWithData(baseConfigData string, override
 			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(from.EMQX), from.Labels),
 		},
 		Data: map[string]string{
-			BaseConfigFile:      baseConfigData,
-			OverridesConfigFile: overridesConfigData,
+			BaseConfigFile:      baseConfig,
+			OverridesConfigFile: "",
 		},
 	}
 }
