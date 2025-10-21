@@ -26,8 +26,8 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	// Do not try to update not-really-changeable configuration options.
 	conf := confSpec
 	stripped := []string{}
-	if confLast != "" {
-		conf, stripped = stripNonChangeableConfig(confSpec, confLast)
+	if confLast != nil {
+		conf, stripped = stripNonChangeableConfig(confSpec, config.WithDefaults(*confLast))
 	}
 
 	// Make sure the config map exists
@@ -68,7 +68,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 
 	// If the annotation is not set, set it to the current config and return.
 	// This reconciler is apparently running for the first time.
-	if confLast == "" {
+	if confLast == nil {
 		reflectLastAppliedConfig(instance, conf)
 		if err := s.Client.Update(r.ctx, instance); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update emqx instance annotation")}
@@ -82,7 +82,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	}
 
 	// If the annotation is set, and the config is different, update the config.
-	if confLast != conf {
+	if *confLast != conf {
 		// Delete readonly configs
 		c, err := config.EMQXConfig(confWithDefaults)
 		if err != nil || c == nil {
@@ -153,19 +153,19 @@ func reflectLastAppliedConfig(instance *appsv2beta1.EMQX, confStr string) {
 	instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey] = confStr
 }
 
-func lastAppliedConfig(instance *appsv2beta1.EMQX) string {
+func lastAppliedConfig(instance *appsv2beta1.EMQX) *string {
 	if instance.Annotations != nil {
 		if confStr := instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey]; confStr != "" {
-			return confStr
+			return &confStr
 		}
 	}
-	return ""
+	return nil
 }
 
 func applicableConfig(instance *appsv2beta1.EMQX) string {
 	// If the annotation is set, use it: most of the time it's the config currently in use.
-	if confStr := lastAppliedConfig(instance); confStr != "" {
-		return config.WithDefaults(confStr)
+	if confStr := lastAppliedConfig(instance); confStr != nil {
+		return config.WithDefaults(*confStr)
 	}
 	// If not, running for the first time, use spec's config.
 	return config.WithDefaults(instance.Spec.Config.Data)
