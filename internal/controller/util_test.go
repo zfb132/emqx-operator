@@ -4,24 +4,24 @@ import (
 	"testing"
 	"time"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestCheckInitialDelaySecondsReady(t *testing.T) {
-	assert.False(t, checkInitialDelaySecondsReady(&appsv2beta1.EMQX{}))
+	assert.False(t, checkInitialDelaySecondsReady(&crdv2.EMQX{}))
 
-	assert.False(t, checkInitialDelaySecondsReady(&appsv2beta1.EMQX{
-		Spec: appsv2beta1.EMQXSpec{
-			UpdateStrategy: appsv2beta1.UpdateStrategy{
+	assert.False(t, checkInitialDelaySecondsReady(&crdv2.EMQX{
+		Spec: crdv2.EMQXSpec{
+			UpdateStrategy: crdv2.UpdateStrategy{
 				InitialDelaySeconds: 999999999,
 			},
 		},
-		Status: appsv2beta1.EMQXStatus{
+		Status: crdv2.EMQXStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               appsv2beta1.Available,
+					Type:               crdv2.Available,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now()},
 				},
@@ -29,16 +29,16 @@ func TestCheckInitialDelaySecondsReady(t *testing.T) {
 		},
 	}))
 
-	assert.True(t, checkInitialDelaySecondsReady(&appsv2beta1.EMQX{
-		Spec: appsv2beta1.EMQXSpec{
-			UpdateStrategy: appsv2beta1.UpdateStrategy{
+	assert.True(t, checkInitialDelaySecondsReady(&crdv2.EMQX{
+		Spec: crdv2.EMQXSpec{
+			UpdateStrategy: crdv2.UpdateStrategy{
 				InitialDelaySeconds: 0,
 			},
 		},
-		Status: appsv2beta1.EMQXStatus{
+		Status: crdv2.EMQXStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               appsv2beta1.Available,
+					Type:               crdv2.Available,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
 				},

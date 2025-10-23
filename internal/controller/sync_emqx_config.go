@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
@@ -18,7 +18,7 @@ type syncConfig struct {
 	*EMQXReconciler
 }
 
-func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (s *syncConfig) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	// Fetch desired / applied configuration.
 	confSpec := instance.Spec.Config.Data
 	confLast := lastAppliedConfig(instance)
@@ -77,7 +77,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	}
 
 	// Postpone runtime config updates until ready.
-	if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
+	if !instance.Status.IsConditionTrue(crdv2.CoreNodesReady) {
 		return subResult{}
 	}
 
@@ -146,23 +146,23 @@ func stripNonChangeableConfig(confDesired string, confLast string) (string, []st
 	return confDesired, stripped
 }
 
-func reflectLastAppliedConfig(instance *appsv2beta1.EMQX, confStr string) {
+func reflectLastAppliedConfig(instance *crdv2.EMQX, confStr string) {
 	if instance.Annotations == nil {
 		instance.Annotations = map[string]string{}
 	}
-	instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey] = confStr
+	instance.Annotations[crdv2.AnnotationLastEMQXConfig] = confStr
 }
 
-func lastAppliedConfig(instance *appsv2beta1.EMQX) *string {
+func lastAppliedConfig(instance *crdv2.EMQX) *string {
 	if instance.Annotations != nil {
-		if confStr := instance.Annotations[appsv2beta1.AnnotationsLastEMQXConfigKey]; confStr != "" {
+		if confStr := instance.Annotations[crdv2.AnnotationLastEMQXConfig]; confStr != "" {
 			return &confStr
 		}
 	}
 	return nil
 }
 
-func applicableConfig(instance *appsv2beta1.EMQX) string {
+func applicableConfig(instance *crdv2.EMQX) string {
 	// If the annotation is set, use it: most of the time it's the config currently in use.
 	if confStr := lastAppliedConfig(instance); confStr != nil {
 		return config.WithDefaults(*confStr)

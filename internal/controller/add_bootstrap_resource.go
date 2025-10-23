@@ -9,7 +9,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	"github.com/sethvargo/go-password/password"
@@ -19,7 +19,7 @@ type addBootstrap struct {
 	*EMQXReconciler
 }
 
-func (a *addBootstrap) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addBootstrap) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	bootstrapAPIKeys, err := a.getAPIKeyString(r.ctx, instance)
 	if err != nil {
 		return subResult{err: emperror.Wrap(err, "failed to get bootstrap api keys")}
@@ -42,7 +42,7 @@ func (a *addBootstrap) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	return subResult{}
 }
 
-func (a *addBootstrap) getAPIKeyString(ctx context.Context, instance *appsv2beta1.EMQX) (string, error) {
+func (a *addBootstrap) getAPIKeyString(ctx context.Context, instance *crdv2.EMQX) (string, error) {
 	var bootstrapAPIKeys string
 
 	for _, apiKey := range instance.Spec.BootstrapAPIKeys {
@@ -66,7 +66,7 @@ func (a *addBootstrap) getAPIKeyString(ctx context.Context, instance *appsv2beta
 	return bootstrapAPIKeys, nil
 }
 
-func (a *addBootstrap) readSecret(ctx context.Context, instance *appsv2beta1.EMQX, name string, key string) (string, error) {
+func (a *addBootstrap) readSecret(ctx context.Context, instance *crdv2.EMQX, name string, key string) (string, error) {
 	secret := &corev1.Secret{}
 	if err := a.Client.Get(ctx, instance.NamespacedName(name), secret); err != nil {
 		return "", emperror.Wrap(err, "failed to get secret")
@@ -79,13 +79,13 @@ func (a *addBootstrap) readSecret(ctx context.Context, instance *appsv2beta1.EMQ
 	return string(secret.Data[key]), nil
 }
 
-func generateBootstrapAPIKeySecret(instance *appsv2beta1.EMQX, bootstrapAPIKeys string) *corev1.Secret {
+func generateBootstrapAPIKeySecret(instance *crdv2.EMQX, bootstrapAPIKeys string) *corev1.Secret {
 	defPassword, _ := password.Generate(64, 10, 0, true, true)
-	bootstrapAPIKeys += appsv2beta1.DefaultBootstrapAPIKey + ":" + defPassword
+	bootstrapAPIKeys += resources.DefaultBootstrapAPIKey + ":" + defPassword
 	return resources.BootstrapAPIKey(instance).Secret(bootstrapAPIKeys)
 }
 
-func generateNodeCookieSecret(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Secret {
+func generateNodeCookieSecret(instance *crdv2.EMQX, conf *config.EMQX) *corev1.Secret {
 	cookie := conf.GetNodeCookie()
 	if cookie == "" {
 		cookie, _ = password.Generate(64, 10, 0, true, true)

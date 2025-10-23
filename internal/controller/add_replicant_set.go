@@ -6,7 +6,7 @@ import (
 
 	emperror "emperror.dev/errors"
 	"github.com/cisco-open/k8s-objectmatcher/patch"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
@@ -25,19 +25,19 @@ type addReplicantSet struct {
 	*EMQXReconciler
 }
 
-func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addReplicantSet) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	// Cluster w/o replicants, skip this step.
 	if instance.Spec.ReplicantTemplate == nil {
 		return subResult{}
 	}
 
 	// Core nodes are still spinning up, wait for them to be ready.
-	if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
+	if !instance.Status.IsConditionTrue(crdv2.CoreNodesReady) {
 		return subResult{}
 	}
 
 	rs := newReplicaSet(instance, r.conf)
-	rsHash := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+	rsHash := rs.Labels[crdv2.LabelPodTemplateHash]
 
 	needCreate := false
 	updateReplicantSet := r.state.updateReplicantSet(instance)
@@ -64,7 +64,7 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 		if err := a.Handler.Create(r.ctx, rs); err != nil {
 			if k8sErrors.IsAlreadyExists(emperror.Cause(err)) {
 				cond := instance.Status.GetLastTrueCondition()
-				if cond != nil && cond.Type != appsv2beta1.Available && cond.Type != appsv2beta1.Ready {
+				if cond != nil && cond.Type != crdv2.Available && cond.Type != crdv2.Ready {
 					// Sometimes the updated replicaSet will not be ready, because the EMQX node can not be started.
 					// And then we will rollback EMQX CR spec, the EMQX operator controller will create a new replicaSet.
 					// But the new replicaSet will be the same as the previous one, so we didn't need to create it, just change the EMQX status.
@@ -115,19 +115,19 @@ func (a *addReplicantSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQ
 	return subResult{}
 }
 
-func (a *addReplicantSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, podTemplateHash string) error {
+func (a *addReplicantSet) updateEMQXStatus(r *reconcileRound, instance *crdv2.EMQX, reason, podTemplateHash string) error {
 	instance.Status.ResetConditions(reason)
 	instance.Status.ReplicantNodesStatus.UpdateRevision = podTemplateHash
 	return a.Client.Status().Update(r.ctx, instance)
 }
 
-func newReplicaSet(instance *appsv2beta1.EMQX, conf *config.EMQX) *appsv1.ReplicaSet {
+func newReplicaSet(instance *crdv2.EMQX, conf *config.EMQX) *appsv1.ReplicaSet {
 	rs := generateReplicaSet(instance)
-	podTemplateSpecHash := computeHash(rs.Spec.Template.DeepCopy(), instance.Status.ReplicantNodesStatus.CollisionCount)
-	rs.Name = rs.Name + "-" + podTemplateSpecHash
-	rs.Labels = appsv2beta1.CloneAndAddLabel(rs.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	rs.Spec.Selector = appsv2beta1.CloneSelectorAndAddLabel(rs.Spec.Selector, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	rs.Spec.Template.Labels = appsv2beta1.CloneAndAddLabel(rs.Spec.Template.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
+	podTemplateHash := computeHash(rs.Spec.Template.DeepCopy(), instance.Status.ReplicantNodesStatus.CollisionCount)
+	rs.Name = rs.Name + "-" + podTemplateHash
+	rs.Labels[crdv2.LabelPodTemplateHash] = podTemplateHash
+	rs.Spec.Template.Labels[crdv2.LabelPodTemplateHash] = podTemplateHash
+	rs.Spec.Selector = util.CloneSelectorAndAddLabel(rs.Spec.Selector, crdv2.LabelPodTemplateHash, podTemplateHash)
 	rs.Spec.Template.Spec.Containers[0].Ports = util.MergeContainerPorts(
 		rs.Spec.Template.Spec.Containers[0].Ports,
 		util.MapServicePortsToContainerPorts(conf.GetDashboardServicePorts()),
@@ -135,12 +135,7 @@ func newReplicaSet(instance *appsv2beta1.EMQX, conf *config.EMQX) *appsv1.Replic
 	return rs
 }
 
-func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
-	labels := appsv2beta1.CloneAndMergeMap(
-		appsv2beta1.DefaultReplicantLabels(instance),
-		instance.Spec.ReplicantTemplate.Labels,
-	)
-
+func generateReplicaSet(instance *crdv2.EMQX) *appsv1.ReplicaSet {
 	// Add a PreStop hook to leave the cluster when the pod is asked to stop.
 	// This is especially important when DS Raft is enabled, otherwise there will be a
 	// lot of leftover records in the DS cluster metadata.
@@ -168,22 +163,22 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 			Namespace:   instance.Namespace,
 			Name:        instance.ReplicantNamespacedName().Name,
 			Annotations: instance.Spec.ReplicantTemplate.DeepCopy().Annotations,
-			Labels:      labels,
+			Labels:      replicaSetLabels(instance),
 		},
 		Spec: appsv1.ReplicaSetSpec{
 			Replicas: instance.Spec.ReplicantTemplate.Spec.Replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: replicaSetLabels(instance),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: instance.Spec.ReplicantTemplate.DeepCopy().Annotations,
-					Labels:      labels,
+					Labels:      replicaSetLabels(instance),
 				},
 				Spec: corev1.PodSpec{
 					ReadinessGates: []corev1.PodReadinessGate{
 						{
-							ConditionType: appsv2beta1.PodOnServing,
+							ConditionType: crdv2.PodOnServing,
 						},
 					},
 					ImagePullSecrets:          instance.Spec.ImagePullSecrets,
@@ -197,7 +192,7 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 					InitContainers:            instance.Spec.ReplicantTemplate.Spec.InitContainers,
 					Containers: append([]corev1.Container{
 						{
-							Name:            appsv2beta1.DefaultContainerName,
+							Name:            crdv2.DefaultContainerName,
 							Image:           instance.Spec.Image,
 							ImagePullPolicy: instance.Spec.ImagePullPolicy,
 							Command:         instance.Spec.ReplicantTemplate.Spec.Command,
@@ -276,4 +271,9 @@ func generateReplicaSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
 			},
 		},
 	}
+}
+
+// Combine instance labels, replicant labels and template labels.
+func replicaSetLabels(instance *crdv2.EMQX) map[string]string {
+	return instance.DefaultLabelsWith(crdv2.ReplicantLabels(), instance.Spec.ReplicantTemplate.Labels)
 }

@@ -1,7 +1,7 @@
 package e2e
 
 import (
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	. "github.com/emqx/emqx-operator/test/util"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -26,7 +26,7 @@ func checkEMQXReady(g Gomega, afterTime ...metav1.Time) {
 
 func checkEMQXStatus(g Gomega, coreReplicas int) {
 	var podList corev1.PodList
-	var status appsv2beta1.EMQXNodesStatus
+	var status crdv2.EMQXNodesStatus
 	g.Expect(KubectlOut("get", "pod",
 		"--selector", "apps.emqx.io/instance=emqx,apps.emqx.io/managed-by=emqx-operator",
 		"-o", "json",
@@ -62,7 +62,7 @@ func checkNoReplicants(g Gomega) {
 }
 
 func checkReplicantStatus(g Gomega, replicantReplicas int) {
-	var status appsv2beta1.EMQXNodesStatus
+	var status crdv2.EMQXNodesStatus
 	g.Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.replicantNodesStatus}")).
 		To(UnmarshalInto(&status), "Failed to get EMQX replicant nodes status")
 	g.Expect(status).To(
@@ -77,7 +77,7 @@ func checkReplicantStatus(g Gomega, replicantReplicas int) {
 	checkNodesStatusRevision(g, status, "replicant", replicantReplicas)
 }
 
-func checkNodesStatusRevision(g Gomega, status appsv2beta1.EMQXNodesStatus, role string, replicas int) {
+func checkNodesStatusRevision(g Gomega, status crdv2.EMQXNodesStatus, role string, replicas int) {
 	var podList corev1.PodList
 	g.Expect(status).To(
 		And(
@@ -91,7 +91,7 @@ func checkNodesStatusRevision(g Gomega, status appsv2beta1.EMQXNodesStatus, role
 		"EMQX %s nodes current and update revisions are different", role,
 	)
 	g.Expect(KubectlOut("get", "pods",
-		"--selector", appsv2beta1.LabelsPodTemplateHashKey+"="+status.CurrentRevision,
+		"--selector", crdv2.LabelPodTemplateHash+"="+status.CurrentRevision,
 		"--field-selector", "status.phase==Running",
 		"-o", "json",
 	)).To(UnmarshalInto(&podList), "Failed to list %s pods", role)
@@ -102,7 +102,7 @@ func checkNodesStatusRevision(g Gomega, status appsv2beta1.EMQXNodesStatus, role
 }
 
 func checkDSReplicationStatus(g Gomega, coreReplicas int) {
-	status := &appsv2beta1.DSReplicationStatus{}
+	status := &crdv2.DSReplicationStatus{}
 	replicationFactor := min(3, coreReplicas)
 	g.Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.dsReplication}")).
 		To(UnmarshalInto(&status), "Failed to get emqx status")
@@ -112,7 +112,7 @@ func checkDSReplicationStatus(g Gomega, coreReplicas int) {
 			HaveField("Name", Not(BeEmpty())),
 			HaveField("NumShards", Not(BeZero())),
 			HaveField("NumShardReplicas", Not(BeZero())),
-			Satisfy(func(db appsv2beta1.DSDBReplicationStatus) bool {
+			Satisfy(func(db crdv2.DSDBReplicationStatus) bool {
 				return db.NumShardReplicas == db.NumShards*int32(replicationFactor)
 			}),
 			HaveField("LostShardReplicas", BeEquivalentTo(0)),

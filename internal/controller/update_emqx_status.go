@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +16,7 @@ type updateStatus struct {
 	*EMQXReconciler
 }
 
-func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (u *updateStatus) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	status := &instance.Status
 
 	status.CoreNodesStatus.Replicas = *instance.Spec.CoreTemplate.Spec.Replicas
@@ -54,20 +54,36 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		u.updateEMQXNodesStatus(r, instance, nodes)
 	}
 	for _, node := range status.CoreNodes {
-		if node.NodeStatus == "running" {
+		if node.Status == "running" {
 			status.CoreNodesStatus.ReadyReplicas++
 		}
 	}
 	for _, node := range status.ReplicantNodes {
-		if node.NodeStatus == "running" {
+		if node.Status == "running" {
 			status.ReplicantNodesStatus.ReadyReplicas++
 		}
 	}
 
 	if req != nil {
-		nodeEvacuationsStatus, err := api.NodeEvacuationStatus(req)
+		clusterEvacuationsStatus, err := api.ClusterEvacuationStatus(req)
 		if err == nil {
-			status.NodeEvacuationsStatus = nodeEvacuationsStatus
+			status.NodeEvacuationsStatus = []crdv2.NodeEvacuationStatus{}
+			for _, ns := range clusterEvacuationsStatus {
+				status.NodeEvacuationsStatus = append(status.NodeEvacuationsStatus, crdv2.NodeEvacuationStatus{
+					NodeName:               ns.Node,
+					State:                  ns.State,
+					SessionRecipients:      ns.SessionRecipients,
+					SessionGoal:            ns.SessionGoal,
+					SessionEvictionRate:    ns.SessionEvictionRate,
+					ConnectionGoal:         ns.ConnectionGoal,
+					ConnectionEvictionRate: ns.ConnectionEvictionRate,
+					// Stats
+					InitialSessions:    ns.Stats.InitialSessions,
+					InitialConnections: ns.Stats.InitialConnected,
+					CurrentSessions:    ns.Stats.CurrentSessions,
+					CurrentConnections: ns.Stats.CurrentConnected,
+				})
+			}
 		} else {
 			return subResult{err: emperror.Wrap(err, "failed to get node evacuation status")}
 		}
@@ -83,7 +99,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 		}
 	}
 	if len(dsReplicationStatus.DBs) > 0 {
-		status.DSReplication.DBs = make([]appsv2beta1.DSDBReplicationStatus, len(dsReplicationStatus.DBs))
+		status.DSReplication.DBs = make([]crdv2.DSDBReplicationStatus, len(dsReplicationStatus.DBs))
 	}
 	for i, db := range dsReplicationStatus.DBs {
 		minReplicas := 0
@@ -106,7 +122,7 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 				}
 			}
 		}
-		status.DSReplication.DBs[i] = appsv2beta1.DSDBReplicationStatus{
+		status.DSReplication.DBs[i] = crdv2.DSDBReplicationStatus{
 			Name:              db.Name,
 			NumShards:         int32(len(db.Shards)),
 			NumShardReplicas:  int32(numShardReplicas),
@@ -126,68 +142,66 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 	return subResult{}
 }
 
-func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2beta1.EMQX) {
+func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *crdv2.EMQX) {
 	status := &instance.Status
-
-	hasReplicants := appsv2beta1.IsExistReplicant(instance)
 
 	condition := status.GetLastTrueCondition()
 	if condition == nil {
-		instance.Status.SetTrueCondition(appsv2beta1.Initialized)
+		instance.Status.SetTrueCondition(crdv2.Initialized)
 		u.updateStatusCondition(r, instance)
 		return
 	}
 
 	switch condition.Type {
 
-	case appsv2beta1.Initialized:
+	case crdv2.Initialized:
 		updateSts := r.state.updateCoreSet(instance)
 		if updateSts != nil {
-			u.statusTransition(r, instance, appsv2beta1.CoreNodesProgressing)
+			u.statusTransition(r, instance, crdv2.CoreNodesProgressing)
 		}
 
-	case appsv2beta1.CoreNodesProgressing:
+	case crdv2.CoreNodesProgressing:
 		updateSts := r.state.updateCoreSet(instance)
 		if updateSts != nil &&
 			updateSts.Status.ReadyReplicas > 0 &&
 			updateSts.Status.ReadyReplicas == status.CoreNodesStatus.UpdateReplicas {
-			u.statusTransition(r, instance, appsv2beta1.CoreNodesReady)
+			u.statusTransition(r, instance, crdv2.CoreNodesReady)
 		}
 
-	case appsv2beta1.CoreNodesReady:
-		if hasReplicants {
-			u.statusTransition(r, instance, appsv2beta1.ReplicantNodesProgressing)
+	case crdv2.CoreNodesReady:
+		if instance.Spec.HasReplicants() {
+			u.statusTransition(r, instance, crdv2.ReplicantNodesProgressing)
 		} else {
-			u.statusTransition(r, instance, appsv2beta1.Available)
+			u.statusTransition(r, instance, crdv2.Available)
 		}
 
-	case appsv2beta1.ReplicantNodesProgressing:
-		if hasReplicants {
+	case crdv2.ReplicantNodesProgressing:
+		if instance.Spec.HasReplicants() {
 			updateRs := r.state.updateReplicantSet(instance)
 			if updateRs != nil &&
 				updateRs.Status.ReadyReplicas > 0 &&
 				updateRs.Status.ReadyReplicas == status.ReplicantNodesStatus.UpdateReplicas {
-				u.statusTransition(r, instance, appsv2beta1.ReplicantNodesReady)
+				u.statusTransition(r, instance, crdv2.ReplicantNodesReady)
 			}
 		} else {
 			u.resetConditions(r, instance, "NoReplicants")
 		}
 
-	case appsv2beta1.ReplicantNodesReady:
-		if hasReplicants {
-			u.statusTransition(r, instance, appsv2beta1.Available)
+	case crdv2.ReplicantNodesReady:
+		if instance.Spec.HasReplicants() {
+			u.statusTransition(r, instance, crdv2.Available)
 		} else {
 			u.resetConditions(r, instance, "NoReplicants")
 		}
 
-	case appsv2beta1.Available:
+	case crdv2.Available:
 		if status.CoreNodesStatus.UpdateReplicas != status.CoreNodesStatus.Replicas ||
 			status.CoreNodesStatus.ReadyReplicas != status.CoreNodesStatus.Replicas ||
 			status.CoreNodesStatus.UpdateRevision != status.CoreNodesStatus.CurrentRevision {
 			break
 		}
 
-		if hasReplicants {
+		if instance.Spec.HasReplicants() {
 			if status.ReplicantNodesStatus.UpdateReplicas != status.ReplicantNodesStatus.Replicas ||
 				status.ReplicantNodesStatus.ReadyReplicas != status.ReplicantNodesStatus.Replicas ||
 				status.ReplicantNodesStatus.UpdateRevision != status.ReplicantNodesStatus.CurrentRevision {
@@ -196,13 +210,13 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 		}
 
 		status.SetCondition(metav1.Condition{
-			Type:    appsv2beta1.Ready,
+			Type:    crdv2.Ready,
 			Status:  metav1.ConditionTrue,
-			Reason:  appsv2beta1.Ready,
+			Reason:  crdv2.Ready,
 			Message: "Cluster is ready",
 		})
 
-	case appsv2beta1.Ready:
+	case crdv2.Ready:
 		updateSts := r.state.updateCoreSet(instance)
 		if updateSts != nil &&
 			updateSts.Status.ReadyReplicas != status.CoreNodesStatus.Replicas {
@@ -210,7 +224,7 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 			return
 		}
 
-		if hasReplicants {
+		if instance.Spec.HasReplicants() {
 			updateRs := r.state.updateReplicantSet(instance)
 			if updateRs != nil &&
 				updateRs.Status.ReadyReplicas != status.ReplicantNodesStatus.Replicas {
@@ -223,13 +237,12 @@ func (u *updateStatus) updateStatusCondition(r *reconcileRound, instance *appsv2
 
 func (u *updateStatus) resetConditions(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	reason string,
 ) {
-	hasReplicants := appsv2beta1.IsExistReplicant(instance)
-	if !hasReplicants {
-		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesProgressing)
-		instance.Status.RemoveCondition(appsv2beta1.ReplicantNodesReady)
+	if !instance.Spec.HasReplicants() {
+		instance.Status.RemoveCondition(crdv2.ReplicantNodesProgressing)
+		instance.Status.RemoveCondition(crdv2.ReplicantNodesReady)
 	}
 	instance.Status.ResetConditions(reason)
 	u.updateStatusCondition(r, instance)
@@ -237,7 +250,7 @@ func (u *updateStatus) resetConditions(
 
 func (u *updateStatus) statusTransition(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	conditionType string,
 ) {
 	instance.Status.SetTrueCondition(conditionType)
@@ -246,7 +259,7 @@ func (u *updateStatus) statusTransition(
 
 func switchCoreSet(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 ) (*appsv1.StatefulSet, *appsv1.StatefulSet) {
 	current := r.state.currentCoreSet(instance)
 	update := r.state.updateCoreSet(instance)
@@ -266,14 +279,14 @@ func switchCoreSet(
 		}
 	}
 	if current != nil {
-		instance.Status.CoreNodesStatus.CurrentRevision = current.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+		instance.Status.CoreNodesStatus.CurrentRevision = current.Labels[crdv2.LabelPodTemplateHash]
 	}
 	return current, update
 }
 
 func switchReplicantSet(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 ) (*appsv1.ReplicaSet, *appsv1.ReplicaSet) {
 	current := r.state.currentReplicantSet(instance)
 	update := r.state.updateReplicantSet(instance)
@@ -293,18 +306,28 @@ func switchReplicantSet(
 		}
 	}
 	if current != nil {
-		instance.Status.ReplicantNodesStatus.CurrentRevision = current.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+		instance.Status.ReplicantNodesStatus.CurrentRevision = current.Labels[crdv2.LabelPodTemplateHash]
 	}
 	return current, update
 }
 
-func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *appsv2beta1.EMQX, nodes []appsv2beta1.EMQXNode) {
+func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *crdv2.EMQX, nodes []api.EMQXNode) {
 	status := &instance.Status
-	status.CoreNodes = []appsv2beta1.EMQXNode{}
-	status.ReplicantNodes = []appsv2beta1.EMQXNode{}
-	for _, node := range nodes {
+	status.CoreNodes = []crdv2.EMQXNode{}
+	status.ReplicantNodes = []crdv2.EMQXNode{}
+	for _, n := range nodes {
+		node := crdv2.EMQXNode{
+			Name:        n.Node,
+			Status:      n.NodeStatus,
+			OTPRelease:  n.OTPRelease,
+			Version:     n.Version,
+			Role:        n.Role,
+			Sessions:    n.Connections,
+			Connections: n.LiveConnections,
+			Uptime:      n.Uptime,
+		}
 		list := &status.CoreNodes
-		host := extractHostname(node.Node)
+		host := extractHostname(n.Node)
 		if node.Role == "replicant" {
 			list = &status.ReplicantNodes
 		}

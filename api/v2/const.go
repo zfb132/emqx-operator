@@ -14,25 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v2beta1
+package v2
 
 import corev1 "k8s.io/api/core/v1"
 
 const DefaultContainerName string = "emqx"
 
-const DefaultBootstrapAPIKey string = "emqx-operator-controller"
-
 const (
 	// labels
-	LabelsInstanceKey        string = "apps.emqx.io/instance"   // my-emqx
-	LabelsManagedByKey       string = "apps.emqx.io/managed-by" // emqx-operator
-	LabelsDBRoleKey          string = "apps.emqx.io/db-role"    // core, replicant
-	LabelsPodTemplateHashKey string = "apps.emqx.io/pod-template-hash"
+	LabelInstance        string = "apps.emqx.io/instance"   // my-emqx
+	LabelManagedBy       string = "apps.emqx.io/managed-by" // emqx-operator
+	LabelDBRole          string = "apps.emqx.io/db-role"    // core, replicant
+	LabelPodTemplateHash string = "apps.emqx.io/pod-template-hash"
 )
 
 const (
 	// annotations
-	AnnotationsLastEMQXConfigKey string = "apps.emqx.io/last-emqx-configuration"
+	AnnotationLastEMQXConfig string = "apps.emqx.io/last-emqx-configuration"
 )
 
 const (

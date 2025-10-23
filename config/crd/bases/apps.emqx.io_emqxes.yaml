@@ -23,7 +23,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v2beta1
+    name: v2
     schema:
       openAPIV3Schema:
         description: EMQX is the Schema for the emqxes API.
@@ -15981,31 +15981,40 @@ spec:
                 items:
                   properties:
                     connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `connections`
-                        field means the number of MQTT session count,
+                      description: Number of connected MQTT clients
                       format: int64
                       type: integer
-                    live_connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `live_connections`
-                        field means the number of connected MQTT clients.
-                      format: int64
-                      type: integer
-                    node:
-                      description: 'EMQX node name, example: emqx@127.0.0.1'
+                    name:
+                      description: Node name
+                      example: emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local
                       type: string
-                    node_status:
-                      description: 'EMQX node status, example: Running'
-                      type: string
-                    otp_release:
-                      description: 'Erlang/OTP version used by EMQX, example: 24.2/12.2'
+                    otpRelease:
+                      description: Erlang/OTP version node is running on
+                      example: 27.3.4.2-2/15.2.7.1
                       type: string
                     podName:
+                      description: Corresponding pod name
+                      example: emqx-core-557c8b7684-0
                       type: string
                     role:
-                      description: 'EMQX cluster node role, enum: "core" "replicant"'
+                      description: Node role, either "core" or "replicant"
+                      example: core
                       type: string
+                    sessions:
+                      description: Number of MQTT sessions
+                      format: int64
+                      type: integer
+                    status:
+                      description: Node status
+                      example: running
+                      type: string
+                    uptime:
+                      description: Node uptime in milliseconds
+                      format: int64
+                      type: integer
                     version:
                       description: EMQX version
+                      example: 5.10.1
                       type: string
                   type: object
                 type: array
@@ -16071,72 +16080,90 @@ spec:
               nodeEvacuationsStatus:
                 items:
                   properties:
-                    connection_eviction_rate:
+                    connectionEvictionRate:
                       format: int32
                       type: integer
-                    connection_goal:
+                    connectionGoal:
                       format: int32
                       type: integer
-                    node:
+                    currentConnections:
+                      description: Current number of connections to this node
+                      format: int32
+                      type: integer
+                    currentSessions:
+                      description: Current number of sessions on this node
+                      format: int32
+                      type: integer
+                    initialConnections:
+                      description: Initial number of connections to this node
+                      format: int32
+                      type: integer
+                    initialSessions:
+                      description: Initial number of sessions on this node
+                      format: int32
+                      type: integer
+                    nodeName:
+                      description: Evacuated node name
+                      example: emqx@10.0.0.1
                       type: string
-                    session_eviction_rate:
+                    sessionEvictionRate:
                       format: int32
                       type: integer
-                    session_goal:
+                    sessionGoal:
                       format: int32
                       type: integer
-                    session_recipients:
+                    sessionRecipients:
+                      description: Session recipients
+                      example:
+                      - emqx@10.0.0.2
+                      - emqx@10.0.0.3
                       items:
                         type: string
                       type: array
                     state:
+                      description: Evacuation state
+                      example: evicting_sessions
                       type: string
-                    stats:
-                      properties:
-                        current_connected:
-                          format: int32
-                          type: integer
-                        current_sessions:
-                          format: int32
-                          type: integer
-                        initial_connected:
-                          format: int32
-                          type: integer
-                        initial_sessions:
-                          format: int32
-                          type: integer
-                      type: object
                   type: object
                 type: array
               replicantNodes:
                 items:
                   properties:
                     connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `connections`
-                        field means the number of MQTT session count,
+                      description: Number of connected MQTT clients
                       format: int64
                       type: integer
-                    live_connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `live_connections`
-                        field means the number of connected MQTT clients.
-                      format: int64
-                      type: integer
-                    node:
-                      description: 'EMQX node name, example: emqx@127.0.0.1'
+                    name:
+                      description: Node name
+                      example: emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local
                       type: string
-                    node_status:
-                      description: 'EMQX node status, example: Running'
-                      type: string
-                    otp_release:
-                      description: 'Erlang/OTP version used by EMQX, example: 24.2/12.2'
+                    otpRelease:
+                      description: Erlang/OTP version node is running on
+                      example: 27.3.4.2-2/15.2.7.1
                       type: string
                     podName:
+                      description: Corresponding pod name
+                      example: emqx-core-557c8b7684-0
                       type: string
                     role:
-                      description: 'EMQX cluster node role, enum: "core" "replicant"'
+                      description: Node role, either "core" or "replicant"
+                      example: core
                       type: string
+                    sessions:
+                      description: Number of MQTT sessions
+                      format: int64
+                      type: integer
+                    status:
+                      description: Node status
+                      example: running
+                      type: string
+                    uptime:
+                      description: Node uptime in milliseconds
+                      format: int64
+                      type: integer
                     version:
                       description: EMQX version
+                      example: 5.10.1
                       type: string
                   type: object
                 type: array

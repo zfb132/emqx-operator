@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,7 +21,7 @@ type scaleDownCore struct {
 	Reason string
 }
 
-func (s *syncCoreSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (s *syncCoreSets) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	updateSts := r.state.updateCoreSet(instance)
 	currentSts := r.state.currentCoreSet(instance)
 	if updateSts == nil || currentSts == nil {
@@ -36,7 +36,7 @@ func (s *syncCoreSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) 
 // Orchestrates gradual scale down of the old statefulSet, by migrating workloads to the new statefulSet.
 func (s *syncCoreSets) migrateSet(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	current *appsv1.StatefulSet,
 ) subResult {
 	admission, err := s.chooseScaleDownCore(r, instance, current)
@@ -60,7 +60,7 @@ func (s *syncCoreSets) migrateSet(
 // Scale up or down the existing statefulSet.
 func (s *syncCoreSets) scaleDownSet(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	current *appsv1.StatefulSet,
 ) subResult {
 	desiredReplicas := *instance.Spec.CoreTemplate.Spec.Replicas
@@ -98,12 +98,12 @@ func (s *syncCoreSets) scaleDownSet(
 
 func (s *syncCoreSets) chooseScaleDownCore(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	current *appsv1.StatefulSet,
 ) (scaleDownCore, error) {
 	// Disallow scaling down the statefulSet if replcants replicaSet is still updating.
 	status := &instance.Status
-	if appsv2beta1.IsExistReplicant(instance) {
+	if instance.Spec.HasReplicants() {
 		if status.ReplicantNodesStatus.CurrentRevision != status.ReplicantNodesStatus.UpdateRevision {
 			return scaleDownCore{Reason: "replicant replicaSet is still updating"}, nil
 		}
@@ -137,13 +137,13 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	}
 
 	// Disallow scaling down the pod that is still a DS replication site.
-	dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
+	dsCondition := util.FindPodCondition(scaleDownPod, crdv2.DSReplicationSite)
 	if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
 		return scaleDownCore{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
 	}
 
 	// Get the node info of the pod to be scaled down.
-	var scaleDownNode *appsv2beta1.EMQXNode
+	var scaleDownNode *crdv2.EMQXNode
 	for _, node := range instance.Status.CoreNodes {
 		if node.PodName == scaleDownPod.Name {
 			scaleDownNode = &node
@@ -157,43 +157,44 @@ func (s *syncCoreSets) chooseScaleDownCore(
 	}
 
 	// Scale down the node that is already stopped.
-	if scaleDownNode.NodeStatus == "stopped" {
+	if scaleDownNode.Status == "stopped" {
 		return scaleDownCore{Pod: scaleDownPod, Reason: "node is already stopped"}, nil
 	}
 
 	// Disallow scaling down the node that has at least one session.
-	if scaleDownNode.Session > 0 {
+	if scaleDownNode.Sessions > 0 {
+		nodeName := scaleDownNode.Name
 		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := migrationTargetNodes(r, instance)
 		if len(migrateTo) == 0 {
-			return scaleDownCore{Reason: fmt.Sprintf("no nodes to migrate %s to", scaleDownNode.Node)}, nil
+			return scaleDownCore{Reason: fmt.Sprintf("no nodes to migrate %s to", nodeName)}, nil
 		}
-		err := api.StartEvacuation(r.oldestCoreRequester(), strategy, migrateTo, scaleDownNode.Node)
+		err := api.StartEvacuation(r.oldestCoreRequester(), strategy, migrateTo, nodeName)
 		if err != nil {
 			return scaleDownCore{}, emperror.Wrap(err, "failed to start node evacuation")
 		}
-		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s evacuation started", scaleDownNode.Node))
-		return scaleDownCore{Reason: fmt.Sprintf("node %s needs to be evacuated", scaleDownNode.Node)}, nil
+		s.EventRecorder.Event(instance, corev1.EventTypeNormal, "NodeEvacuation", fmt.Sprintf("Node %s evacuation started", nodeName))
+		return scaleDownCore{Reason: fmt.Sprintf("node %s needs to be evacuated", nodeName)}, nil
 	}
 
 	return scaleDownCore{Pod: scaleDownPod}, nil
 }
 
 // Returns the list of nodes to migrate workloads to.
-func migrationTargetNodes(r *reconcileRound, instance *appsv2beta1.EMQX) []string {
+func migrationTargetNodes(r *reconcileRound, instance *crdv2.EMQX) []string {
 	targets := []string{}
-	if appsv2beta1.IsExistReplicant(instance) {
+	if instance.Spec.HasReplicants() {
 		for _, node := range instance.Status.ReplicantNodes {
 			pod := r.state.podWithName(node.PodName)
 			if r.state.partOfUpdateSet(pod, instance) {
-				targets = append(targets, node.Node)
+				targets = append(targets, node.Name)
 			}
 		}
 	} else {
 		for _, node := range instance.Status.CoreNodes {
 			pod := r.state.podWithName(node.PodName)
 			if r.state.partOfUpdateSet(pod, instance) {
-				targets = append(targets, node.Node)
+				targets = append(targets, node.Name)
 			}
 		}
 	}

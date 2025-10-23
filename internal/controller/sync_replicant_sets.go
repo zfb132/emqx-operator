@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,7 +21,7 @@ type scaleDownReplicant struct {
 	Reason string
 }
 
-func (s *syncReplicantSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (s *syncReplicantSets) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	updateRs := r.state.updateReplicantSet(instance)
 	currentRs := r.state.currentReplicantSet(instance)
 	if updateRs == nil || currentRs == nil {
@@ -36,7 +36,7 @@ func (s *syncReplicantSets) reconcile(r *reconcileRound, instance *appsv2beta1.E
 // Orchestrates gradual scale down of the old replicaSet, by migrating workloads to the new replicaSet.
 func (s *syncReplicantSets) migrateSet(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	current *appsv1.ReplicaSet,
 ) subResult {
 	admission, err := s.chooseScaleDownReplicant(r, instance, current)
@@ -70,11 +70,11 @@ func (s *syncReplicantSets) migrateSet(
 
 func (s *syncReplicantSets) chooseScaleDownReplicant(
 	r *reconcileRound,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 	current *appsv1.ReplicaSet,
 ) (scaleDownReplicant, error) {
 	var scaleDownPod *corev1.Pod
-	var scaleDownNode *appsv2beta1.EMQXNode
+	var scaleDownNode *crdv2.EMQXNode
 	status := &instance.Status
 
 	// Disallow scaling down the replicaSet if the instance just recently became ready.
@@ -102,17 +102,17 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 	if len(status.NodeEvacuationsStatus) > 0 {
 		evacuatingNode := status.NodeEvacuationsStatus[0]
 		if evacuatingNode.State != "prohibiting" {
-			return scaleDownReplicant{Reason: fmt.Sprintf("node %s evacuation in progress", evacuatingNode.Node)}, nil
+			return scaleDownReplicant{Reason: fmt.Sprintf("node %s evacuation in progress", evacuatingNode.NodeName)}, nil
 		}
 		for _, node := range status.ReplicantNodes {
-			if node.Node == evacuatingNode.Node && node.PodName != "" {
+			if node.Name == evacuatingNode.NodeName && node.PodName != "" {
 				scaleDownNode = &node
 				scaleDownPod = r.state.podWithName(node.PodName)
 				break
 			}
 		}
 		if scaleDownNode == nil {
-			return scaleDownReplicant{Reason: fmt.Sprintf("evacuated node %s already deleted", evacuatingNode.Node)}, nil
+			return scaleDownReplicant{Reason: fmt.Sprintf("evacuated node %s already deleted", evacuatingNode.NodeName)}, nil
 		}
 	} else {
 		// If there is no node evacuation, return the oldest pod.
@@ -127,21 +127,21 @@ func (s *syncReplicantSets) chooseScaleDownReplicant(
 			return scaleDownReplicant{}, emperror.Errorf("node is missing for pod %s", scaleDownPod.Name)
 		}
 		// If the pod is already stopped, return it.
-		if scaleDownNode.NodeStatus == "stopped" {
+		if scaleDownNode.Status == "stopped" {
 			return scaleDownReplicant{Pod: scaleDownPod, Reason: "pod is already stopped"}, nil
 		}
 	}
 
 	// Disallow scaling down the pod that is still a DS replication site.
 	// While replicants are not supposed to be DS replication sites, check it for safety.
-	dsCondition := util.FindPodCondition(scaleDownPod, appsv2beta1.DSReplicationSite)
+	dsCondition := util.FindPodCondition(scaleDownPod, crdv2.DSReplicationSite)
 	if dsCondition != nil && dsCondition.Status != corev1.ConditionFalse {
 		return scaleDownReplicant{Reason: fmt.Sprintf("pod %s is still a DS replication site", scaleDownPod.Name)}, nil
 	}
 
 	// If the pod has at least one session, start node evacuation.
-	if scaleDownNode.Session > 0 {
-		nodeName := scaleDownNode.Node
+	if scaleDownNode.Sessions > 0 {
+		nodeName := scaleDownNode.Name
 		strategy := instance.Spec.UpdateStrategy.EvacuationStrategy
 		migrateTo := migrationTargetNodes(r, instance)
 		if len(migrateTo) == 0 {

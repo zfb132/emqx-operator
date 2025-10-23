@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,7 +28,7 @@ func (r *reconcileState) podWithName(name string) *corev1.Pod {
 func (r *reconcileState) podsWithRole(role string) []*corev1.Pod {
 	var list []*corev1.Pod
 	for _, pod := range r.pods {
-		if pod.Labels[appsv2beta1.LabelsDBRoleKey] == role {
+		if pod.Labels[crdv2.LabelDBRole] == role {
 			list = append(list, pod)
 		}
 	}
@@ -48,9 +48,9 @@ func (r *reconcileState) podsManagedBy(object metav1.Object) []*corev1.Pod {
 	return list
 }
 
-func (r *reconcileState) currentCoreSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
+func (r *reconcileState) currentCoreSet(instance *crdv2.EMQX) *appsv1.StatefulSet {
 	for _, sts := range r.coreSets {
-		hash := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+		hash := sts.Labels[crdv2.LabelPodTemplateHash]
 		if hash == instance.Status.CoreNodesStatus.CurrentRevision {
 			return sts
 		}
@@ -58,9 +58,9 @@ func (r *reconcileState) currentCoreSet(instance *appsv2beta1.EMQX) *appsv1.Stat
 	return nil
 }
 
-func (r *reconcileState) currentReplicantSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
+func (r *reconcileState) currentReplicantSet(instance *crdv2.EMQX) *appsv1.ReplicaSet {
 	for _, rs := range r.replicantSets {
-		hash := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+		hash := rs.Labels[crdv2.LabelPodTemplateHash]
 		if hash == instance.Status.ReplicantNodesStatus.CurrentRevision {
 			return rs
 		}
@@ -68,9 +68,9 @@ func (r *reconcileState) currentReplicantSet(instance *appsv2beta1.EMQX) *appsv1
 	return nil
 }
 
-func (r *reconcileState) updateCoreSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
+func (r *reconcileState) updateCoreSet(instance *crdv2.EMQX) *appsv1.StatefulSet {
 	for _, sts := range r.coreSets {
-		hash := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+		hash := sts.Labels[crdv2.LabelPodTemplateHash]
 		if hash == instance.Status.CoreNodesStatus.UpdateRevision {
 			return sts
 		}
@@ -78,9 +78,9 @@ func (r *reconcileState) updateCoreSet(instance *appsv2beta1.EMQX) *appsv1.State
 	return nil
 }
 
-func (r *reconcileState) updateReplicantSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
+func (r *reconcileState) updateReplicantSet(instance *crdv2.EMQX) *appsv1.ReplicaSet {
 	for _, rs := range r.replicantSets {
-		hash := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+		hash := rs.Labels[crdv2.LabelPodTemplateHash]
 		if hash == instance.Status.ReplicantNodesStatus.UpdateRevision {
 			return rs
 		}
@@ -88,7 +88,7 @@ func (r *reconcileState) updateReplicantSet(instance *appsv2beta1.EMQX) *appsv1.
 	return nil
 }
 
-func (r *reconcileState) partOfCurrentSet(pod *corev1.Pod, instance *appsv2beta1.EMQX) bool {
+func (r *reconcileState) partOfCurrentSet(pod *corev1.Pod, instance *crdv2.EMQX) bool {
 	controllerRef := metav1.GetControllerOf(pod)
 	if controllerRef == nil {
 		return false
@@ -104,7 +104,7 @@ func (r *reconcileState) partOfCurrentSet(pod *corev1.Pod, instance *appsv2beta1
 	return false
 }
 
-func (r *reconcileState) partOfUpdateSet(pod *corev1.Pod, instance *appsv2beta1.EMQX) bool {
+func (r *reconcileState) partOfUpdateSet(pod *corev1.Pod, instance *crdv2.EMQX) bool {
 	controllerRef := metav1.GetControllerOf(pod)
 	if controllerRef == nil {
 		return false
@@ -124,19 +124,19 @@ type loadState struct {
 	*EMQXReconciler
 }
 
-func (l *loadState) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (l *loadState) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	state := loadReconcileState(r.ctx, l.Client, instance)
 	r.state = state
 	return subResult{}
 }
 
-func loadReconcileState(ctx context.Context, client k8s.Client, instance *appsv2beta1.EMQX) *reconcileState {
+func loadReconcileState(ctx context.Context, client k8s.Client, instance *crdv2.EMQX) *reconcileState {
 	state := &reconcileState{}
 
 	stsList := &appsv1.StatefulSetList{}
 	_ = client.List(ctx, stsList,
 		k8s.InNamespace(instance.Namespace),
-		k8s.MatchingLabels(appsv2beta1.DefaultCoreLabels(instance)),
+		k8s.MatchingLabels(instance.DefaultLabelsWith(crdv2.CoreLabels())),
 	)
 
 	for _, sts := range stsList.Items {
@@ -148,7 +148,7 @@ func loadReconcileState(ctx context.Context, client k8s.Client, instance *appsv2
 	rsList := &appsv1.ReplicaSetList{}
 	_ = client.List(ctx, rsList,
 		k8s.InNamespace(instance.Namespace),
-		k8s.MatchingLabels(appsv2beta1.DefaultReplicantLabels(instance)),
+		k8s.MatchingLabels(instance.DefaultLabelsWith(crdv2.ReplicantLabels())),
 	)
 
 	for _, rs := range rsList.Items {
@@ -160,7 +160,7 @@ func loadReconcileState(ctx context.Context, client k8s.Client, instance *appsv2
 	podList := &corev1.PodList{}
 	_ = client.List(ctx, podList,
 		k8s.InNamespace(instance.Namespace),
-		k8s.MatchingLabels(appsv2beta1.DefaultLabels(instance)),
+		k8s.MatchingLabels(instance.DefaultLabels()),
 	)
 
 	for _, pod := range podList.Items {

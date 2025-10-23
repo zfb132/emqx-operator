@@ -3,7 +3,7 @@ package controller
 import (
 	"testing"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestGetNewStatefulSet(t *testing.T) {
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "emqx",
@@ -24,7 +24,7 @@ func TestGetNewStatefulSet(t *testing.T) {
 				"emqx-annotation-key": "emqx-annotation-value",
 			},
 		},
-		Spec: appsv2beta1.EMQXSpec{
+		Spec: crdv2.EMQXSpec{
 			Image:         "emqx/emqx:5.1",
 			ClusterDomain: "cluster.local",
 		},
@@ -38,7 +38,7 @@ func TestGetNewStatefulSet(t *testing.T) {
 		},
 	}
 	instance.Spec.CoreTemplate.Spec.Replicas = ptr.To(int32(3))
-	instance.Status.CoreNodesStatus = appsv2beta1.EMQXNodesStatus{
+	instance.Status.CoreNodesStatus = crdv2.EMQXNodesStatus{
 		CollisionCount: ptr.To(int32(0)),
 	}
 
@@ -49,10 +49,10 @@ func TestGetNewStatefulSet(t *testing.T) {
 
 		assert.Equal(t, emqx.Spec.CoreTemplate.Annotations, got.Annotations)
 		assert.Equal(t, "core-label-value", got.Labels["core-label-key"])
-		assert.Equal(t, "emqx", got.Labels[appsv2beta1.LabelsInstanceKey])
-		assert.Equal(t, "emqx-operator", got.Labels[appsv2beta1.LabelsManagedByKey])
-		assert.Equal(t, "core", got.Labels[appsv2beta1.LabelsDBRoleKey])
-		assert.Equal(t, "emqx-core-"+got.Labels[appsv2beta1.LabelsPodTemplateHashKey], got.Name)
+		assert.Equal(t, "emqx", got.Labels[crdv2.LabelInstance])
+		assert.Equal(t, "emqx-operator", got.Labels[crdv2.LabelManagedBy])
+		assert.Equal(t, "core", got.Labels[crdv2.LabelDBRole])
+		assert.Equal(t, "emqx-core-"+got.Labels[crdv2.LabelPodTemplateHash], got.Name)
 		assert.Equal(t, emqx.Namespace, got.Namespace)
 	})
 
@@ -62,19 +62,19 @@ func TestGetNewStatefulSet(t *testing.T) {
 		got := newStatefulSet(emqx, conf)
 		assert.Equal(t, emqx.Spec.CoreTemplate.ObjectMeta.Annotations, got.Spec.Template.Annotations)
 		assert.EqualValues(t, map[string]string{
-			appsv2beta1.LabelsInstanceKey:        "emqx",
-			appsv2beta1.LabelsManagedByKey:       "emqx-operator",
-			appsv2beta1.LabelsDBRoleKey:          "core",
-			appsv2beta1.LabelsPodTemplateHashKey: got.Labels[appsv2beta1.LabelsPodTemplateHashKey],
-			"core-label-key":                     "core-label-value",
+			crdv2.LabelInstance:        "emqx",
+			crdv2.LabelManagedBy:       "emqx-operator",
+			crdv2.LabelDBRole:          "core",
+			crdv2.LabelPodTemplateHash: got.Labels[crdv2.LabelPodTemplateHash],
+			"core-label-key":           "core-label-value",
 		}, got.Spec.Template.Labels)
 
 		assert.EqualValues(t, map[string]string{
-			appsv2beta1.LabelsInstanceKey:        "emqx",
-			appsv2beta1.LabelsManagedByKey:       "emqx-operator",
-			appsv2beta1.LabelsDBRoleKey:          "core",
-			appsv2beta1.LabelsPodTemplateHashKey: got.Labels[appsv2beta1.LabelsPodTemplateHashKey],
-			"core-label-key":                     "core-label-value",
+			crdv2.LabelInstance:        "emqx",
+			crdv2.LabelManagedBy:       "emqx-operator",
+			crdv2.LabelDBRole:          "core",
+			crdv2.LabelPodTemplateHash: got.Labels[crdv2.LabelPodTemplateHash],
+			"core-label-key":           "core-label-value",
 		}, got.Spec.Selector.MatchLabels)
 	})
 
@@ -168,10 +168,10 @@ func TestGetNewStatefulSet(t *testing.T) {
 					Name:      "emqx-core-data",
 					Namespace: "emqx",
 					Labels: map[string]string{
-						appsv2beta1.LabelsDBRoleKey:    "core",
-						appsv2beta1.LabelsInstanceKey:  "emqx",
-						appsv2beta1.LabelsManagedByKey: "emqx-operator",
-						"core-label-key":               "core-label-value",
+						crdv2.LabelDBRole:    "core",
+						crdv2.LabelInstance:  "emqx",
+						crdv2.LabelManagedBy: "emqx-operator",
+						"core-label-key":     "core-label-value",
 					},
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{

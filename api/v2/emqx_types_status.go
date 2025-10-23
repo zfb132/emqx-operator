@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v2beta1
+package v2
 
 import (
 	"slices"
@@ -38,21 +38,27 @@ type EMQXStatus struct {
 }
 
 type NodeEvacuationStatus struct {
-	Node                   string              `json:"node,omitempty"`
-	Stats                  NodeEvacuationStats `json:"stats,omitempty"`
-	State                  string              `json:"state,omitempty"`
-	SessionRecipients      []string            `json:"session_recipients,omitempty"`
-	SessionGoal            int32               `json:"session_goal,omitempty"`
-	SessionEvictionRate    int32               `json:"session_eviction_rate,omitempty"`
-	ConnectionGoal         int32               `json:"connection_goal,omitempty"`
-	ConnectionEvictionRate int32               `json:"connection_eviction_rate,omitempty"`
-}
-
-type NodeEvacuationStats struct {
-	InitialSessions  int32 `json:"initial_sessions,omitempty"`
-	InitialConnected int32 `json:"initial_connected,omitempty"`
-	CurrentSessions  int32 `json:"current_sessions,omitempty"`
-	CurrentConnected int32 `json:"current_connected,omitempty"`
+	// Evacuated node name
+	// +kubebuilder:example="emqx@10.0.0.1"
+	NodeName string `json:"nodeName,omitempty"`
+	// Evacuation state
+	// +kubebuilder:example=evicting_sessions
+	State string `json:"state,omitempty"`
+	// Session recipients
+	// +kubebuilder:example={"emqx@10.0.0.2", "emqx@10.0.0.3"}
+	SessionRecipients      []string `json:"sessionRecipients,omitempty"`
+	SessionGoal            int32    `json:"sessionGoal,omitempty"`
+	SessionEvictionRate    int32    `json:"sessionEvictionRate,omitempty"`
+	ConnectionGoal         int32    `json:"connectionGoal,omitempty"`
+	ConnectionEvictionRate int32    `json:"connectionEvictionRate,omitempty"`
+	// Initial number of sessions on this node
+	InitialSessions int32 `json:"initialSessions,omitempty"`
+	// Initial number of connections to this node
+	InitialConnections int32 `json:"initialConnections,omitempty"`
+	// Current number of sessions on this node
+	CurrentSessions int32 `json:"currentSessions,omitempty"`
+	// Current number of connections to this node
+	CurrentConnections int32 `json:"currentConnections,omitempty"`
 }
 
 type EMQXNodesStatus struct {
@@ -69,33 +75,40 @@ type EMQXNodesStatus struct {
 }
 
 type EMQXNode struct {
+	// Node name
+	// +kubebuilder:example="emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local"
+	Name string `json:"name,omitempty"`
+	// Corresponding pod name
+	// +kubebuilder:example="emqx-core-557c8b7684-0"
 	PodName string `json:"podName,omitempty"`
-	// EMQX node name, example: emqx@127.0.0.1
-	Node string `json:"node,omitempty"`
-	// EMQX node status, example: Running
-	NodeStatus string `json:"node_status,omitempty"`
-	// Erlang/OTP version used by EMQX, example: 24.2/12.2
-	OTPRelease string `json:"otp_release,omitempty"`
+	// Node status
+	// +kubebuilder:example=running
+	Status string `json:"status,omitempty"`
+	// Erlang/OTP version node is running on
+	// +kubebuilder:example="27.3.4.2-2/15.2.7.1"
+	OTPRelease string `json:"otpRelease,omitempty"`
 	// EMQX version
+	// +kubebuilder:example="5.10.1"
 	Version string `json:"version,omitempty"`
-	// EMQX cluster node role, enum: "core" "replicant"
+	// Node role, either "core" or "replicant"
+	// +kubebuilder:example=core
 	Role string `json:"role,omitempty"`
-	// In EMQX's API of `/api/v5/nodes`, the `connections` field means the number of MQTT session count,
-	Session int64 `json:"connections,omitempty"`
-	// In EMQX's API of `/api/v5/nodes`, the `live_connections` field means the number of connected MQTT clients.
-	Connections int64 `json:"live_connections,omitempty"`
-	// EMQX node uptime, milliseconds
-	Uptime int64 `json:"-"`
+	// Number of MQTT sessions
+	Sessions int64 `json:"sessions,omitempty"`
+	// Number of connected MQTT clients
+	Connections int64 `json:"connections,omitempty"`
+	// Node uptime in milliseconds
+	Uptime int64 `json:"uptime,omitempty"`
 }
 
 func (s EMQXStatus) FindNode(node string) *EMQXNode {
 	for _, n := range s.CoreNodes {
-		if n.Node == node {
+		if n.Name == node {
 			return &n
 		}
 	}
 	for _, n := range s.ReplicantNodes {
-		if n.Node == node {
+		if n.Name == node {
 			return &n
 		}
 	}

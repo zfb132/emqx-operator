@@ -3,7 +3,7 @@ package controller
 import (
 	"time"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +24,7 @@ func actualize(instance client.Object) (client.Object, error) {
 
 var _ = Describe("Reconciler syncPods", Ordered, func() {
 	var ns *corev1.Namespace = &corev1.Namespace{}
-	var instance *appsv2beta1.EMQX
+	var instance *crdv2.EMQX
 
 	var sr *syncReplicantSets
 	var sc *syncCoreSets
@@ -47,10 +47,9 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
 		// Set up "update" coreSet:
 		instance = emqx.DeepCopy()
-		updateCoreLabels := appsv2beta1.CloneAndAddLabel(
-			appsv2beta1.DefaultCoreLabels(instance),
-			appsv2beta1.LabelsPodTemplateHashKey,
-			updateRevision,
+		updateCoreLabels := instance.DefaultLabelsWith(
+			crdv2.CoreLabels(),
+			map[string]string{crdv2.LabelPodTemplateHash: updateRevision},
 		)
 		updateCoreSet = &appsv1.StatefulSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -77,14 +76,13 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 		}
 		// Set up "current" coreSet:
 		currentCoreSet = updateCoreSet.DeepCopy()
-		currentCoreSet.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentCoreSet.Spec.Selector.MatchLabels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentCoreSet.Spec.Template.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		currentCoreSet.Labels[crdv2.LabelPodTemplateHash] = currentRevision
+		currentCoreSet.Spec.Selector.MatchLabels[crdv2.LabelPodTemplateHash] = currentRevision
+		currentCoreSet.Spec.Template.Labels[crdv2.LabelPodTemplateHash] = currentRevision
 		// Set up "update" replicantSet:
-		updateReplicantLabels := appsv2beta1.CloneAndAddLabel(
-			appsv2beta1.DefaultReplicantLabels(instance),
-			appsv2beta1.LabelsPodTemplateHashKey,
-			updateRevision,
+		updateReplicantLabels := instance.DefaultLabelsWith(
+			crdv2.ReplicantLabels(),
+			map[string]string{crdv2.LabelPodTemplateHash: updateRevision},
 		)
 		updateReplicantSet = &appsv1.ReplicaSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -111,9 +109,9 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 		}
 		// Set up "current" replicantSet:
 		currentReplicantSet = updateReplicantSet.DeepCopy()
-		currentReplicantSet.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentReplicantSet.Spec.Selector.MatchLabels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
-		currentReplicantSet.Spec.Template.Labels[appsv2beta1.LabelsPodTemplateHashKey] = currentRevision
+		currentReplicantSet.Labels[crdv2.LabelPodTemplateHash] = currentRevision
+		currentReplicantSet.Spec.Selector.MatchLabels[crdv2.LabelPodTemplateHash] = currentRevision
+		currentReplicantSet.Spec.Template.Labels[crdv2.LabelPodTemplateHash] = currentRevision
 		// Create resources:
 		Expect(k8sClient.Create(ctx, updateCoreSet)).Should(Succeed())
 		Expect(k8sClient.Create(ctx, updateReplicantSet)).Should(Succeed())
@@ -183,20 +181,20 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 		// Mock instance state:
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
-		instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
-			Spec: appsv2beta1.EMQXReplicantTemplateSpec{
+		instance.Spec.ReplicantTemplate = &crdv2.EMQXReplicantTemplate{
+			Spec: crdv2.EMQXReplicantTemplateSpec{
 				Replicas: ptr.To(int32(1)),
 			},
 		}
-		instance.Status = appsv2beta1.EMQXStatus{
+		instance.Status = crdv2.EMQXStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               appsv2beta1.Available,
+					Type:               crdv2.Available,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
 				},
 			},
-			CoreNodesStatus: appsv2beta1.EMQXNodesStatus{
+			CoreNodesStatus: crdv2.EMQXNodesStatus{
 				UpdateRevision:  updateRevision,
 				UpdateReplicas:  1,
 				CurrentRevision: currentRevision,
@@ -204,10 +202,10 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 				ReadyReplicas:   2,
 				Replicas:        1,
 			},
-			CoreNodes: []appsv2beta1.EMQXNode{
-				{Node: "emqx@" + currentCorePod.Name, PodName: currentCorePod.Name, NodeStatus: "running"},
+			CoreNodes: []crdv2.EMQXNode{
+				{Name: "emqx@" + currentCorePod.Name, PodName: currentCorePod.Name, Status: "running"},
 			},
-			ReplicantNodesStatus: appsv2beta1.EMQXNodesStatus{
+			ReplicantNodesStatus: crdv2.EMQXNodesStatus{
 				UpdateRevision:  updateRevision,
 				UpdateReplicas:  1,
 				CurrentRevision: currentRevision,
@@ -215,8 +213,8 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 				ReadyReplicas:   2,
 				Replicas:        1,
 			},
-			ReplicantNodes: []appsv2beta1.EMQXNode{
-				{Node: "emqx@10.0.0.1", PodName: currentReplicantPod.Name, NodeStatus: "running"},
+			ReplicantNodes: []crdv2.EMQXNode{
+				{Name: "emqx@10.0.0.1", PodName: currentReplicantPod.Name, Status: "running"},
 			},
 		}
 		// Instantiate reconciler:
@@ -227,37 +225,37 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 	})
 
 	It("running update emqx node controller", func() {
-		Eventually(func() *appsv2beta1.EMQX {
+		Eventually(func() *crdv2.EMQX {
 			_ = sc.reconcile(round, instance)
 			_ = sr.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(And(
 			// should add pod deletion cost
 			WithTransform(
-				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentReplicantPod) },
+				func(*crdv2.EMQX) (client.Object, error) { return actualize(currentReplicantPod) },
 				HaveField("Annotations", HaveKeyWithValue("controller.kubernetes.io/pod-deletion-cost", "-99999")),
 			),
 			// should scale down rs
 			WithTransform(
-				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentReplicantSet) },
+				func(*crdv2.EMQX) (client.Object, error) { return actualize(currentReplicantSet) },
 				HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(0))),
 			),
 			// before rs not ready, do nothing for sts
 			WithTransform(
-				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentCoreSet) },
+				func(*crdv2.EMQX) (client.Object, error) { return actualize(currentCoreSet) },
 				HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(1))),
 			),
 		))
 
 		By("mock rs ready, should scale down sts")
 		instance.Status.ReplicantNodesStatus.CurrentRevision = instance.Status.ReplicantNodesStatus.UpdateRevision
-		Eventually(func() *appsv2beta1.EMQX {
+		Eventually(func() *crdv2.EMQX {
 			_ = sc.reconcile(round, instance)
 			_ = sr.reconcile(round, instance)
 			return instance
 		}).WithTimeout(timeout).WithPolling(interval).Should(
 			WithTransform(
-				func(*appsv2beta1.EMQX) (client.Object, error) { return actualize(currentCoreSet) },
+				func(*crdv2.EMQX) (client.Object, error) { return actualize(currentCoreSet) },
 				HaveField("Spec.Replicas", HaveValue(BeEquivalentTo(0))),
 			),
 		)
@@ -267,7 +265,7 @@ var _ = Describe("Reconciler syncPods", Ordered, func() {
 
 var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 	var ns *corev1.Namespace = &corev1.Namespace{}
-	var instance *appsv2beta1.EMQX
+	var instance *crdv2.EMQX
 
 	var s *syncCoreSets
 	var round *reconcileRound
@@ -285,10 +283,9 @@ var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
 		// Create "current" coreSet:
 		instance = emqx.DeepCopy()
-		currentLabels := appsv2beta1.CloneAndAddLabel(
-			appsv2beta1.DefaultCoreLabels(instance),
-			appsv2beta1.LabelsPodTemplateHashKey,
-			"fake",
+		currentLabels := instance.DefaultLabelsWith(
+			crdv2.CoreLabels(),
+			map[string]string{crdv2.LabelPodTemplateHash: "fake"},
 		)
 		current = &appsv1.StatefulSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -353,13 +350,13 @@ var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 		instance.Status.CoreNodesStatus.CurrentRevision = "fake"
 		instance.Status.Conditions = []metav1.Condition{
 			{
-				Type:               appsv2beta1.Available,
+				Type:               crdv2.Available,
 				Status:             metav1.ConditionTrue,
 				LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
 			},
 		}
-		instance.Status.CoreNodes = []appsv2beta1.EMQXNode{
-			{Node: "emqx@" + currentPod.Name, PodName: currentPod.Name, NodeStatus: "running"},
+		instance.Status.CoreNodes = []crdv2.EMQXNode{
+			{Name: "emqx@" + currentPod.Name, PodName: currentPod.Name, Status: "running"},
 		}
 		// Instantiate reconciler:
 		s = &syncCoreSets{emqxReconciler}
@@ -388,12 +385,12 @@ var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 	})
 
 	It("replicaSet is not ready", func() {
-		instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
-			Spec: appsv2beta1.EMQXReplicantTemplateSpec{
+		instance.Spec.ReplicantTemplate = &crdv2.EMQXReplicantTemplate{
+			Spec: crdv2.EMQXReplicantTemplateSpec{
 				Replicas: ptr.To(int32(3)),
 			},
 		}
-		instance.Status.ReplicantNodesStatus = appsv2beta1.EMQXNodesStatus{
+		instance.Status.ReplicantNodesStatus = crdv2.EMQXNodesStatus{
 			UpdateRevision:  updateRevision,
 			CurrentRevision: currentRevision,
 		}
@@ -410,7 +407,7 @@ var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 	})
 
 	It("node session > 0", func() {
-		instance.Status.CoreNodes[0].Session = 99999
+		instance.Status.CoreNodes[0].Sessions = 99999
 		admission, err := s.chooseScaleDownCore(round, instance, current)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(admission).Should(And(
@@ -420,7 +417,7 @@ var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 	})
 
 	It("node session is 0", func() {
-		instance.Status.CoreNodes[0].Session = 0
+		instance.Status.CoreNodes[0].Sessions = 0
 		admission, err := s.chooseScaleDownCore(round, instance, current)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(admission).Should(And(
@@ -432,7 +429,7 @@ var _ = Describe("Reconciler syncCoreSets", Ordered, func() {
 
 var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
 	var ns *corev1.Namespace = &corev1.Namespace{}
-	var instance *appsv2beta1.EMQX
+	var instance *crdv2.EMQX
 
 	var s *syncReplicantSets
 	var round *reconcileRound
@@ -456,16 +453,16 @@ var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: instance.Name + "-",
 				Namespace:    ns.Name,
-				Labels:       appsv2beta1.DefaultReplicantLabels(instance),
+				Labels:       instance.DefaultLabelsWith(crdv2.ReplicantLabels()),
 			},
 			Spec: appsv1.ReplicaSetSpec{
 				Replicas: ptr.To(int32(1)),
 				Selector: &metav1.LabelSelector{
-					MatchLabels: appsv2beta1.DefaultReplicantLabels(instance),
+					MatchLabels: instance.DefaultLabelsWith(crdv2.ReplicantLabels()),
 				},
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels: appsv2beta1.DefaultReplicantLabels(instance),
+						Labels: instance.DefaultLabelsWith(crdv2.ReplicantLabels()),
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{
@@ -514,13 +511,13 @@ var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
 		instance.Status.ReplicantNodesStatus.CurrentRevision = "fake"
 		instance.Status.Conditions = []metav1.Condition{
 			{
-				Type:               appsv2beta1.Available,
+				Type:               crdv2.Available,
 				Status:             metav1.ConditionTrue,
 				LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
 			},
 		}
-		instance.Status.ReplicantNodes = []appsv2beta1.EMQXNode{
-			{Node: "emqx@10.0.0.1", PodName: currentPod.Name, NodeStatus: "running"},
+		instance.Status.ReplicantNodes = []crdv2.EMQXNode{
+			{Name: "emqx@10.0.0.1", PodName: currentPod.Name, Status: "running"},
 		}
 		// Instantiate reconciler:
 		s = &syncReplicantSets{emqxReconciler}
@@ -549,7 +546,7 @@ var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
 	})
 
 	It("emqx is in node evacuations", func() {
-		instance.Status.NodeEvacuationsStatus = []appsv2beta1.NodeEvacuationStatus{
+		instance.Status.NodeEvacuationsStatus = []crdv2.NodeEvacuationStatus{
 			{State: "fake"},
 		}
 		admission, err := s.chooseScaleDownReplicant(round, instance, current)
@@ -561,7 +558,7 @@ var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
 	})
 
 	It("node session > 0", func() {
-		instance.Status.ReplicantNodes[0].Session = 99999
+		instance.Status.ReplicantNodes[0].Sessions = 99999
 		admission, err := s.chooseScaleDownReplicant(round, instance, current)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(admission).Should(And(
@@ -571,7 +568,7 @@ var _ = Describe("Reconciler syncReplicantSets", Ordered, func() {
 	})
 
 	It("node session is 0", func() {
-		instance.Status.ReplicantNodes[0].Session = 0
+		instance.Status.ReplicantNodes[0].Sessions = 0
 		admission, err := s.chooseScaleDownReplicant(round, instance, current)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(admission).Should(And(

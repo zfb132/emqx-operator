@@ -2,7 +2,7 @@ package controller
 
 import (
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
@@ -16,13 +16,13 @@ type addService struct {
 	*EMQXReconciler
 }
 
-func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addService) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	req := r.oldestCoreRequester()
 	if req == nil {
 		return subResult{}
 	}
 
-	if !instance.Status.IsConditionTrue(appsv2beta1.CoreNodesReady) {
+	if !instance.Status.IsConditionTrue(crdv2.CoreNodesReady) {
 		return subResult{}
 	}
 
@@ -50,7 +50,7 @@ func (a *addService) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	return subResult{}
 }
 
-func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Service {
+func generateDashboardService(instance *crdv2.EMQX, conf *config.EMQX) *corev1.Service {
 	meta := &metav1.ObjectMeta{}
 	spec := &corev1.ServiceSpec{}
 	if instance.Spec.DashboardServiceTemplate != nil {
@@ -67,7 +67,7 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.EMQX) *co
 	}
 
 	spec.Ports = util.MergeServicePorts(spec.Ports, ports)
-	spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
+	spec.Selector = instance.DefaultLabelsWith(crdv2.CoreLabels())
 
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -77,14 +77,14 @@ func generateDashboardService(instance *appsv2beta1.EMQX, conf *config.EMQX) *co
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   instance.Namespace,
 			Name:        instance.DashboardServiceNamespacedName().Name,
-			Labels:      appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), meta.Labels),
+			Labels:      instance.DefaultLabelsWith(meta.Labels),
 			Annotations: meta.Annotations,
 		},
 		Spec: *spec,
 	}
 }
 
-func generateListenerService(instance *appsv2beta1.EMQX, conf *config.EMQX) *corev1.Service {
+func generateListenerService(instance *crdv2.EMQX, conf *config.EMQX) *corev1.Service {
 	meta := &metav1.ObjectMeta{}
 	spec := &corev1.ServiceSpec{}
 	if instance.Spec.ListenersServiceTemplate != nil {
@@ -126,9 +126,9 @@ func generateListenerService(instance *appsv2beta1.EMQX, conf *config.EMQX) *cor
 	}
 
 	spec.Ports = util.MergeServicePorts(spec.Ports, ports)
-	spec.Selector = appsv2beta1.DefaultCoreLabels(instance)
-	if appsv2beta1.IsExistReplicant(instance) && instance.Status.ReplicantNodesStatus.ReadyReplicas > 0 {
-		spec.Selector = appsv2beta1.DefaultReplicantLabels(instance)
+	spec.Selector = instance.DefaultLabelsWith(crdv2.CoreLabels())
+	if instance.Spec.HasReplicants() && instance.Status.ReplicantNodesStatus.ReadyReplicas > 0 {
+		spec.Selector = instance.DefaultLabelsWith(crdv2.ReplicantLabels())
 	}
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -138,7 +138,7 @@ func generateListenerService(instance *appsv2beta1.EMQX, conf *config.EMQX) *cor
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   instance.Namespace,
 			Name:        instance.ListenersServiceNamespacedName().Name,
-			Labels:      appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), meta.Labels),
+			Labels:      instance.DefaultLabelsWith(meta.Labels),
 			Annotations: meta.Annotations,
 		},
 		Spec: *spec,

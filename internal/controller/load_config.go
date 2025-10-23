@@ -2,7 +2,7 @@ package controller
 
 import (
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 )
 
@@ -10,7 +10,7 @@ type loadConfig struct {
 	*EMQXReconciler
 }
 
-func (l *loadConfig) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (l *loadConfig) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	conf, err := config.EMQXConfigWithDefaults(applicableConfig(instance))
 	if err != nil {
 		return subResult{

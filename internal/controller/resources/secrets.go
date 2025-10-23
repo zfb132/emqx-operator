@@ -3,26 +3,28 @@ package controller
 import (
 	"fmt"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const DefaultBootstrapAPIKey string = "emqx-operator-controller"
+
 const boostrapApiKeysVolumeName = "bootstrap-api-keys"
 
 type cookieResource struct {
-	*appsv2beta1.EMQX
+	*crdv2.EMQX
 }
 
 type bootstrapAPIKeyResource struct {
-	*appsv2beta1.EMQX
+	*crdv2.EMQX
 }
 
-func BootstrapAPIKey(instance *appsv2beta1.EMQX) bootstrapAPIKeyResource {
+func BootstrapAPIKey(instance *crdv2.EMQX) bootstrapAPIKeyResource {
 	return bootstrapAPIKeyResource{instance}
 }
 
-func Cookie(instance *appsv2beta1.EMQX) cookieResource {
+func Cookie(instance *crdv2.EMQX) cookieResource {
 	return cookieResource{instance}
 }
 
@@ -35,7 +37,7 @@ func (from bootstrapAPIKeyResource) Secret(content string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: from.Namespace,
 			Name:      from.BootstrapAPIKeyNamespacedName().Name,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(from.EMQX), from.Labels),
+			Labels:    from.DefaultLabelsWith(from.Labels),
 		},
 		StringData: map[string]string{
 			"bootstrap_api_key": content,
@@ -79,7 +81,7 @@ func (from cookieResource) Secret(content string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: from.Namespace,
 			Name:      from.NodeCookieNamespacedName().Name,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(from.EMQX), from.Labels),
+			Labels:    from.DefaultLabelsWith(from.Labels),
 		},
 		StringData: map[string]string{
 			"node_cookie": content,

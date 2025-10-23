@@ -4,7 +4,7 @@ import (
 	"context"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	corev1 "k8s.io/api/core/v1"
 	k8s "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -13,7 +13,7 @@ type setupAPIRequester struct {
 	*EMQXReconciler
 }
 
-func (s *setupAPIRequester) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (s *setupAPIRequester) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	bootstrapAPIKey, err := getBootstrapAPIKey(r.ctx, s.Client, instance)
 	if err != nil {
 		return subResult{err: err}
@@ -29,7 +29,7 @@ func (s *setupAPIRequester) reconcile(r *reconcileRound, instance *appsv2beta1.E
 func getBootstrapAPIKey(
 	ctx context.Context,
 	client k8s.Client,
-	instance *appsv2beta1.EMQX,
+	instance *crdv2.EMQX,
 ) (*corev1.Secret, error) {
 	bootstrapAPIKey := &corev1.Secret{}
 	err := client.Get(ctx, instance.BootstrapAPIKeyNamespacedName(), bootstrapAPIKey)

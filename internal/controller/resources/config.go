@@ -1,7 +1,7 @@
 package controller
 
 import (
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -12,10 +12,10 @@ const OverridesConfigFile string = "emqx.conf"
 const configVolumeName = "bootstrap-config"
 
 type emqxConfigResource struct {
-	*appsv2beta1.EMQX
+	*crdv2.EMQX
 }
 
-func EMQXConfig(instance *appsv2beta1.EMQX) emqxConfigResource {
+func EMQXConfig(instance *crdv2.EMQX) emqxConfigResource {
 	return emqxConfigResource{instance}
 }
 
@@ -31,7 +31,7 @@ func (from emqxConfigResource) ConfigMap(baseConfig string) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      from.ConfigsNamespacedName().Name,
 			Namespace: from.Namespace,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(from.EMQX), from.Labels),
+			Labels:    from.DefaultLabelsWith(from.Labels),
 		},
 		Data: map[string]string{
 			BaseConfigFile:      baseConfig,

@@ -2,7 +2,7 @@ package controller
 
 import (
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 )
 
@@ -12,7 +12,7 @@ type dsLoadClusterState struct {
 	*EMQXReconciler
 }
 
-func (c *dsLoadClusterState) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (c *dsLoadClusterState) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	// Instantiate API requester for a node that is part of update StatefulSet.
 	req := r.requester.forOldestCore(r.state, &managedByFilter{r.state.updateCoreSet(instance)})
 	// If there's no suitable EMQX API to query, skip the reconciliation.

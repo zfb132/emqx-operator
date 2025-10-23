@@ -3,7 +3,7 @@ package controller
 import (
 	"time"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,32 +15,32 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func actualInstance(instance *appsv2beta1.EMQX) *appsv2beta1.EMQX {
+func actualInstance(instance *crdv2.EMQX) *crdv2.EMQX {
 	_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(instance), instance)
 	return instance
 }
 
-func replicantSets(instance *appsv2beta1.EMQX) []appsv1.ReplicaSet {
+func replicantSets(instance *crdv2.EMQX) []appsv1.ReplicaSet {
 	list := &appsv1.ReplicaSetList{}
 	_ = k8sClient.List(ctx, list,
 		client.InNamespace(instance.Namespace),
-		client.MatchingLabels(appsv2beta1.DefaultReplicantLabels(instance)),
+		client.MatchingLabels(instance.DefaultLabelsWith(crdv2.ReplicantLabels())),
 	)
 	return list.Items
 }
 
-func adoptReplicantSet(instance *appsv2beta1.EMQX) *appsv1.ReplicaSet {
+func adoptReplicantSet(instance *crdv2.EMQX) *appsv1.ReplicaSet {
 	list := replicantSets(instance)
 	if len(list) == 0 {
 		return nil
 	}
 	rs := list[0].DeepCopy()
-	rsHash := rs.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+	rsHash := rs.Labels[crdv2.LabelPodTemplateHash]
 	instance.Status.ReplicantNodesStatus.UpdateRevision = rsHash
 	return rs
 }
 
-func replicantSetsReconcileRound(instance *appsv2beta1.EMQX) *reconcileRound {
+func replicantSetsReconcileRound(instance *crdv2.EMQX) *reconcileRound {
 	round := newReconcileRound()
 	round.state = loadReconcileState(ctx, k8sClient, instance)
 	return round
@@ -48,7 +48,7 @@ func replicantSetsReconcileRound(instance *appsv2beta1.EMQX) *reconcileRound {
 
 var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 	var a *addReplicantSet
-	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
+	var instance *crdv2.EMQX = &crdv2.EMQX{}
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	BeforeAll(func() {
@@ -72,39 +72,39 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 		// Create instance:
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
-		instance.Spec.ReplicantTemplate = &appsv2beta1.EMQXReplicantTemplate{
-			Spec: appsv2beta1.EMQXReplicantTemplateSpec{
+		instance.Spec.ReplicantTemplate = &crdv2.EMQXReplicantTemplate{
+			Spec: crdv2.EMQXReplicantTemplateSpec{
 				Replicas: ptr.To(int32(3)),
 			},
 		}
-		instance.Status = appsv2beta1.EMQXStatus{
-			ReplicantNodesStatus: appsv2beta1.EMQXNodesStatus{
+		instance.Status = crdv2.EMQXStatus{
+			ReplicantNodesStatus: crdv2.EMQXNodesStatus{
 				Replicas: 3,
 			},
 			Conditions: []metav1.Condition{
 				{
-					Type:               appsv2beta1.Ready,
+					Type:               crdv2.Ready,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
-					Reason:             appsv2beta1.Ready,
+					Reason:             crdv2.Ready,
 				},
 				{
-					Type:               appsv2beta1.CoreNodesReady,
+					Type:               crdv2.CoreNodesReady,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
-					Reason:             appsv2beta1.CoreNodesReady,
+					Reason:             crdv2.CoreNodesReady,
 				},
 				{
-					Type:               appsv2beta1.ReplicantNodesReady,
+					Type:               crdv2.ReplicantNodesReady,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
-					Reason:             appsv2beta1.ReplicantNodesReady,
+					Reason:             crdv2.ReplicantNodesReady,
 				},
 				{
-					Type:               appsv2beta1.Initialized,
+					Type:               crdv2.Initialized,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -10)},
-					Reason:             appsv2beta1.Initialized,
+					Reason:             crdv2.Initialized,
 				},
 			},
 		}
@@ -130,7 +130,7 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 	Context("core nodes is not ready", func() {
 		It("should do nothing", func() {
 			// Remove core nodes ready condition:
-			instance.Status.RemoveCondition(appsv2beta1.CoreNodesReady)
+			instance.Status.RemoveCondition(crdv2.CoreNodesReady)
 			// Reconciliation step should succeed:
 			round := replicantSetsReconcileRound(instance)
 			Eventually(a.reconcile).WithArguments(round, instance).
@@ -222,11 +222,11 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 			Eventually(actualInstance).WithArguments(instance).
 				Should(And(
 					WithTransform(
-						func(emqx *appsv2beta1.EMQX) *metav1.Condition { return emqx.Status.GetLastTrueCondition() },
-						HaveField("Type", Equal(appsv2beta1.Initialized)),
+						func(emqx *crdv2.EMQX) *metav1.Condition { return emqx.Status.GetLastTrueCondition() },
+						HaveField("Type", Equal(crdv2.Initialized)),
 					),
-					HaveCondition(appsv2beta1.Ready, HaveField("Status", Equal(metav1.ConditionFalse))),
-					HaveCondition(appsv2beta1.ReplicantNodesReady, HaveField("Status", Equal(metav1.ConditionFalse))),
+					HaveCondition(crdv2.Ready, HaveField("Status", Equal(metav1.ConditionFalse))),
+					HaveCondition(crdv2.ReplicantNodesReady, HaveField("Status", Equal(metav1.ConditionFalse))),
 				))
 		})
 
@@ -258,11 +258,11 @@ var _ = Describe("Reconciler addReplicantSet", Ordered, func() {
 			Eventually(actualInstance).WithArguments(instance).
 				Should(And(
 					WithTransform(
-						func(emqx *appsv2beta1.EMQX) *metav1.Condition { return emqx.Status.GetLastTrueCondition() },
-						HaveField("Type", Equal(appsv2beta1.Initialized)),
+						func(emqx *crdv2.EMQX) *metav1.Condition { return emqx.Status.GetLastTrueCondition() },
+						HaveField("Type", Equal(crdv2.Initialized)),
 					),
-					HaveCondition(appsv2beta1.Ready, HaveField("Status", Equal(metav1.ConditionFalse))),
-					HaveCondition(appsv2beta1.ReplicantNodesReady, HaveField("Status", Equal(metav1.ConditionFalse))),
+					HaveCondition(crdv2.Ready, HaveField("Status", Equal(metav1.ConditionFalse))),
+					HaveCondition(crdv2.ReplicantNodesReady, HaveField("Status", Equal(metav1.ConditionFalse))),
 				))
 		})
 

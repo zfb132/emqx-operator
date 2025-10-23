@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	. "github.com/emqx/emqx-operator/test/util"
 	"github.com/lithammer/dedent"
 	. "github.com/onsi/ginkgo/v2"
@@ -171,7 +171,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			coreRev, err := KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus.currentRevision}")
 			Expect(err).NotTo(HaveOccurred(), "Failed to get EMQX status")
 			Expect(KubectlOut("get", "statefulset",
-				"--selector", appsv2beta1.LabelsPodTemplateHashKey+"="+coreRev,
+				"--selector", crdv2.LabelPodTemplateHash+"="+coreRev,
 				"-o", "json",
 			)).To(UnmarshalInto(&stsList), "Failed to list statefulsets")
 			Expect(stsList.Items).To(HaveLen(1))
@@ -280,7 +280,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				To(Succeed())
 
 			By("lookup initial EMQX status")
-			var statusInitial appsv2beta1.EMQXNodesStatus
+			var statusInitial crdv2.EMQXNodesStatus
 			Eventually(checkEMQXReady).Should(Succeed())
 			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
 				To(UnmarshalInto(&statusInitial))
@@ -296,7 +296,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				]`)).
 				To(Succeed())
 			Consistently(checkEMQXReady, "30s", "3s").WithArguments(changedAt1).Should(Not(Succeed()))
-			var status1 appsv2beta1.EMQXNodesStatus
+			var status1 crdv2.EMQXNodesStatus
 			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
 				To(UnmarshalInto(&status1))
 
@@ -311,12 +311,12 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 				]`)).
 				To(Succeed())
 			Consistently(checkEMQXReady, "30s", "3s").WithArguments(changedAt2).Should(Not(Succeed()))
-			var status2 appsv2beta1.EMQXNodesStatus
+			var status2 crdv2.EMQXNodesStatus
 			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
 				To(UnmarshalInto(&status2))
 
 			By("verify current sets have not changed")
-			var status appsv2beta1.EMQXNodesStatus
+			var status crdv2.EMQXNodesStatus
 			Expect(KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus}")).
 				To(BeUnmarshalledAs(&status, And(
 					HaveField("CurrentRevision", Equal(statusInitial.CurrentRevision)),
@@ -339,7 +339,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 
 			var stsList appsv1.StatefulSetList
 			Eventually(KubectlOut).WithArguments("get", "statefulset",
-				"--selector", appsv2beta1.LabelsInstanceKey+"=emqx",
+				"--selector", crdv2.LabelInstance+"=emqx",
 				"-o", "json",
 			).Should(BeUnmarshalledAs(&stsList, HaveField("Items",
 				// Current (same as update) + 1 outdated
@@ -347,9 +347,9 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			)))
 			Expect(stsList.Items).To(And(
 				// First botched coreSet should be cleaned
-				Not(ContainElement(HaveLabel(appsv2beta1.LabelsPodTemplateHashKey, Equal(status1.UpdateRevision)))),
+				Not(ContainElement(HaveLabel(crdv2.LabelPodTemplateHash, Equal(status1.UpdateRevision)))),
 				// Second botched coreSet should be preserved as part of revision history
-				ContainElement(HaveLabel(appsv2beta1.LabelsPodTemplateHashKey, Equal(status2.UpdateRevision))),
+				ContainElement(HaveLabel(crdv2.LabelPodTemplateHash, Equal(status2.UpdateRevision))),
 			))
 		})
 
@@ -414,7 +414,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			coreRev, err := KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus.currentRevision}")
 			Expect(err).NotTo(HaveOccurred(), "Failed to get EMQX status")
 			Expect(KubectlOut("get", "statefulset",
-				"--selector", appsv2beta1.LabelsPodTemplateHashKey+"="+coreRev,
+				"--selector", crdv2.LabelPodTemplateHash+"="+coreRev,
 				"-o", "json",
 			)).To(UnmarshalInto(&stsList), "Failed to list statefulsets")
 			Expect(stsList.Items).To(HaveLen(1))
@@ -424,7 +424,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			replRev, err := KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.replicantNodesStatus.currentRevision}")
 			Expect(err).NotTo(HaveOccurred(), "Failed to get EMQX status")
 			Expect(KubectlOut("get", "replicaset",
-				"--selector", appsv2beta1.LabelsPodTemplateHashKey+"="+replRev,
+				"--selector", crdv2.LabelPodTemplateHash+"="+replRev,
 				"-o", "json",
 			)).To(UnmarshalInto(&rsList), "Failed to list replicasets")
 			Expect(rsList.Items).To(HaveLen(1))
@@ -489,20 +489,20 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			By("verify EMQX pods have relevant conditions")
 			var pods corev1.PodList
 			Expect(KubectlOut("get", "pods",
-				"--selector", appsv2beta1.LabelsManagedByKey+"=emqx-operator",
+				"--selector", crdv2.LabelManagedBy+"=emqx-operator",
 				"-o", "json",
 			)).To(UnmarshalInto(&pods), "Failed to list EMQX pods")
 			Expect(pods.Items).To(HaveLen(4), "EMQX cluster does not have 4 pods")
 			for _, pod := range pods.Items {
-				if pod.Labels[appsv2beta1.LabelsDBRoleKey] == "core" {
+				if pod.Labels[crdv2.LabelDBRole] == "core" {
 					Expect(pod.Status.Conditions).To(ContainElement(And(
-						HaveField("Type", Equal(appsv2beta1.DSReplicationSite)),
+						HaveField("Type", Equal(crdv2.DSReplicationSite)),
 						HaveField("Status", Equal(corev1.ConditionTrue)),
 					)))
 				}
-				if pod.Labels[appsv2beta1.LabelsDBRoleKey] == "replicant" {
+				if pod.Labels[crdv2.LabelDBRole] == "replicant" {
 					Expect(pod.Status.Conditions).To(ContainElement(And(
-						HaveField("Type", Equal(appsv2beta1.DSReplicationSite)),
+						HaveField("Type", Equal(crdv2.DSReplicationSite)),
 						HaveField("Status", Equal(corev1.ConditionFalse)),
 					)))
 				}
@@ -548,7 +548,7 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 			coreRev, err := KubectlOut("get", "emqx", "emqx", "-o", "jsonpath={.status.coreNodesStatus.currentRevision}")
 			Expect(err).NotTo(HaveOccurred(), "Failed to get EMQX status")
 			Expect(KubectlOut("get", "statefulset",
-				"--selector", appsv2beta1.LabelsPodTemplateHashKey+"="+coreRev,
+				"--selector", crdv2.LabelPodTemplateHash+"="+coreRev,
 				"-o", "json",
 			)).To(UnmarshalInto(&stsList), "Failed to list statefulSets")
 
