@@ -186,14 +186,14 @@ func migrationTargetNodes(r *reconcileRound, instance *crdv2.EMQX) []string {
 	if instance.Spec.HasReplicants() {
 		for _, node := range instance.Status.ReplicantNodes {
 			pod := r.state.podWithName(node.PodName)
-			if r.state.partOfUpdateSet(pod, instance) {
+			if pod != nil && r.state.partOfUpdateSet(pod, instance) {
 				targets = append(targets, node.Name)
 			}
 		}
 	} else {
 		for _, node := range instance.Status.CoreNodes {
 			pod := r.state.podWithName(node.PodName)
-			if r.state.partOfUpdateSet(pod, instance) {
+			if pod != nil && r.state.partOfUpdateSet(pod, instance) {
 				targets = append(targets, node.Name)
 			}
 		}
