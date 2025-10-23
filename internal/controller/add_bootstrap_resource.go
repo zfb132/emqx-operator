@@ -49,12 +49,10 @@ func (a *addBootstrap) getAPIKeyString(ctx context.Context, instance *crdv2.EMQX
 		if apiKey.SecretRef != nil {
 			keyValue, err := a.readSecret(ctx, instance, apiKey.SecretRef.Key.SecretName, apiKey.SecretRef.Key.SecretKey)
 			if err != nil {
-				a.EventRecorder.Event(instance, corev1.EventTypeWarning, "GetBootStrapSecretRef", err.Error())
 				return "", err
 			}
 			secretValue, err := a.readSecret(ctx, instance, apiKey.SecretRef.Secret.SecretName, apiKey.SecretRef.Secret.SecretKey)
 			if err != nil {
-				a.EventRecorder.Event(instance, corev1.EventTypeWarning, "GetBootStrapSecretRef", err.Error())
 				return "", err
 			}
 			bootstrapAPIKeys += keyValue + ":" + secretValue + "\n"
