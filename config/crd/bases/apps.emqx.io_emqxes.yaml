@@ -16090,17 +16090,6 @@ spec:
                     connectionEvictionRate:
                       format: int32
                       type: integer
-                    connectionGoal:
-                      format: int32
-                      type: integer
-                    currentConnections:
-                      description: Current number of connections to this node
-                      format: int32
-                      type: integer
-                    currentSessions:
-                      description: Current number of sessions on this node
-                      format: int32
-                      type: integer
                     initialConnections:
                       description: Initial number of connections to this node
                       format: int32
@@ -16114,9 +16103,6 @@ spec:
                       example: emqx@10.0.0.1
                       type: string
                     sessionEvictionRate:
-                      format: int32
-                      type: integer
-                    sessionGoal:
                       format: int32
                       type: integer
                     sessionRecipients:

@@ -47,18 +47,12 @@ type NodeEvacuationStatus struct {
 	// Session recipients
 	// +kubebuilder:example={"emqx@10.0.0.2", "emqx@10.0.0.3"}
 	SessionRecipients      []string `json:"sessionRecipients,omitempty"`
-	SessionGoal            int32    `json:"sessionGoal,omitempty"`
 	SessionEvictionRate    int32    `json:"sessionEvictionRate,omitempty"`
-	ConnectionGoal         int32    `json:"connectionGoal,omitempty"`
 	ConnectionEvictionRate int32    `json:"connectionEvictionRate,omitempty"`
 	// Initial number of sessions on this node
 	InitialSessions int32 `json:"initialSessions,omitempty"`
 	// Initial number of connections to this node
 	InitialConnections int32 `json:"initialConnections,omitempty"`
-	// Current number of sessions on this node
-	CurrentSessions int32 `json:"currentSessions,omitempty"`
-	// Current number of connections to this node
-	CurrentConnections int32 `json:"currentConnections,omitempty"`
 }
 
 type EMQXNodesStatus struct {

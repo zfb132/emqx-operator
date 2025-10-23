@@ -73,15 +73,11 @@ func (u *updateStatus) reconcile(r *reconcileRound, instance *crdv2.EMQX) subRes
 					NodeName:               ns.Node,
 					State:                  ns.State,
 					SessionRecipients:      ns.SessionRecipients,
-					SessionGoal:            ns.SessionGoal,
 					SessionEvictionRate:    ns.SessionEvictionRate,
-					ConnectionGoal:         ns.ConnectionGoal,
 					ConnectionEvictionRate: ns.ConnectionEvictionRate,
 					// Stats
 					InitialSessions:    ns.Stats.InitialSessions,
 					InitialConnections: ns.Stats.InitialConnected,
-					CurrentSessions:    ns.Stats.CurrentSessions,
-					CurrentConnections: ns.Stats.CurrentConnected,
 				})
 			}
 		} else {
