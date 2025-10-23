@@ -16047,23 +16047,34 @@ spec:
                     items:
                       properties:
                         lostShardReplicas:
+                          description: Total number of shard replicas belonging to
+                            lost sites
                           format: int32
                           type: integer
                         maxReplicas:
+                          description: Maximum replication factor among database shards
                           format: int32
                           type: integer
                         minReplicas:
+                          description: Minimum replication factor among database shards
                           format: int32
                           type: integer
                         name:
+                          description: Name of the database
+                          example: messages
                           type: string
                         numShardReplicas:
+                          description: Total number of shard replicas
+                          example: 48
                           format: int32
                           type: integer
                         numShards:
+                          description: Number of shards of the database
+                          example: 16
                           format: int32
                           type: integer
                         numTransitions:
+                          description: Current number of shard ownership transitions
                           format: int32
                           type: integer
                       required:

@@ -135,13 +135,23 @@ type DSReplicationStatus struct {
 }
 
 type DSDBReplicationStatus struct {
-	Name              string `json:"name"`
-	NumShards         int32  `json:"numShards"`
-	NumShardReplicas  int32  `json:"numShardReplicas"`
-	LostShardReplicas int32  `json:"lostShardReplicas"`
-	NumTransitions    int32  `json:"numTransitions"`
-	MinReplicas       int32  `json:"minReplicas"`
-	MaxReplicas       int32  `json:"maxReplicas"`
+	// Name of the database
+	// +kubebuilder:example="messages"
+	Name string `json:"name"`
+	// Number of shards of the database
+	// +kubebuilder:example=16
+	NumShards int32 `json:"numShards"`
+	// Total number of shard replicas
+	// +kubebuilder:example=48
+	NumShardReplicas int32 `json:"numShardReplicas"`
+	// Total number of shard replicas belonging to lost sites
+	LostShardReplicas int32 `json:"lostShardReplicas"`
+	// Current number of shard ownership transitions
+	NumTransitions int32 `json:"numTransitions"`
+	// Minimum replication factor among database shards
+	MinReplicas int32 `json:"minReplicas"`
+	// Maximum replication factor among database shards
+	MaxReplicas int32 `json:"maxReplicas"`
 }
 
 const (
