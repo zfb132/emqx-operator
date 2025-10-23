@@ -16008,10 +16008,6 @@ spec:
                       description: Node status
                       example: running
                       type: string
-                    uptime:
-                      description: Node uptime in milliseconds
-                      format: int64
-                      type: integer
                     version:
                       description: EMQX version
                       example: 5.10.1
@@ -16168,10 +16164,6 @@ spec:
                       description: Node status
                       example: running
                       type: string
-                    uptime:
-                      description: Node uptime in milliseconds
-                      format: int64
-                      type: integer
                     version:
                       description: EMQX version
                       example: 5.10.1

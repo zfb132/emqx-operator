@@ -97,8 +97,6 @@ type EMQXNode struct {
 	Sessions int64 `json:"sessions,omitempty"`
 	// Number of connected MQTT clients
 	Connections int64 `json:"connections,omitempty"`
-	// Node uptime in milliseconds
-	Uptime int64 `json:"uptime,omitempty"`
 }
 
 func (s EMQXStatus) FindNode(node string) *EMQXNode {

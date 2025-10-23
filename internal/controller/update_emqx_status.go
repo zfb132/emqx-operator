@@ -315,6 +315,9 @@ func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *crdv2.
 	status := &instance.Status
 	status.CoreNodes = []crdv2.EMQXNode{}
 	status.ReplicantNodes = []crdv2.EMQXNode{}
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].Uptime < nodes[j].Uptime
+	})
 	for _, n := range nodes {
 		node := crdv2.EMQXNode{
 			Name:        n.Node,
@@ -324,7 +327,6 @@ func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *crdv2.
 			Role:        n.Role,
 			Sessions:    n.Connections,
 			Connections: n.LiveConnections,
-			Uptime:      n.Uptime,
 		}
 		list := &status.CoreNodes
 		host := extractHostname(n.Node)
@@ -343,12 +345,6 @@ func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *crdv2.
 		}
 		*list = append(*list, node)
 	}
-	sort.Slice(status.CoreNodes, func(i, j int) bool {
-		return status.CoreNodes[i].Uptime < status.CoreNodes[j].Uptime
-	})
-	sort.Slice(status.ReplicantNodes, func(i, j int) bool {
-		return status.ReplicantNodes[i].Uptime < status.ReplicantNodes[j].Uptime
-	})
 }
 
 func extractHostname(node string) string {

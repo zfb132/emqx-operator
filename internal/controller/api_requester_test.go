@@ -44,7 +44,6 @@ func TestRequesterFilter(t *testing.T) {
 					Role:        "core",
 					Sessions:    0,
 					Connections: 0,
-					Uptime:      0,
 				},
 				{
 					PodName:     coreSetName + "-1",
@@ -55,7 +54,6 @@ func TestRequesterFilter(t *testing.T) {
 					Role:        "core",
 					Sessions:    0,
 					Connections: 0,
-					Uptime:      0,
 				},
 			},
 			ReplicantNodes: []crdv2.EMQXNode{},
