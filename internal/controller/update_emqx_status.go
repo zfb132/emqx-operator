@@ -1,7 +1,8 @@
 package controller
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	emperror "emperror.dev/errors"
@@ -311,8 +312,14 @@ func (u *updateStatus) updateEMQXNodesStatus(r *reconcileRound, instance *crdv2.
 	status := &instance.Status
 	status.CoreNodes = []crdv2.EMQXNode{}
 	status.ReplicantNodes = []crdv2.EMQXNode{}
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].Uptime < nodes[j].Uptime
+	slices.SortFunc(nodes, func(a, b api.EMQXNode) int {
+		// Use seconds granularity to avoid jitter in ordering
+		asec := a.Uptime / 1000
+		bsec := b.Uptime / 1000
+		if asec == bsec {
+			return cmp.Compare(a.Node, b.Node)
+		}
+		return cmp.Compare(asec, bsec)
 	})
 	for _, n := range nodes {
 		node := crdv2.EMQXNode{
