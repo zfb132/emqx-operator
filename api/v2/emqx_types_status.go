@@ -25,6 +25,8 @@ import (
 // EMQXStatus defines the observed state of EMQX
 type EMQXStatus struct {
 	// Represents the latest available observations of a EMQX Custom Resource current state.
+	// +listType=map
+	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	CoreNodes       []EMQXNode      `json:"coreNodes,omitempty"`
