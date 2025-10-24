@@ -1,16 +1,81 @@
 # emqx-operator
-// TODO(user): Add simple overview of use/purpose
+
+EMQX Operator is a [Kubernetes](https://kubernetes.io/) operator for managing [EMQX](https://emqx.com/) clusters.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
 
-## Getting Started
+The operator conceptually consists of the following parts:
+- EMQX CRD: Definition for a resource that resembles the EMQX cluster in the Kubernetes API.
+- Rebalance CRD: Definition for a resource that orchestrates rebalancing of EMQX clusters.
+- Controller manager: Kubernetes controller that manages various Kubernetes resources according to EMQX CRs specifications.
+
+This operator supports:
+* Management of EMQX clusters in both regular and core-replicant deployment modes.
+* Management of [EMQX DS](https://docs.emqx.com/en/emqx/latest/durability/durability_introduction.html#sessions-and-durable-storage) replication, including automatic rebalancing.
+* Rebalancing of MQTT sessions and connections across EMQX cluster nodes.
+
+## Compatibility
+
+This operator is compatible with the following EMQX releases:
+- EMQX 5.9
+- EMQX 5.10
+- EMQX 6.x
+
+## Installation
+
+Here's the simplest way to install the operator.
+```sh
+kubectl apply --server-side=true -f https://github.com/emqx/emqx-operator/releases/download/v2.3.0/install.yaml
+kubectl wait --for=condition=Ready pods -l "control-plane=controller-manager" --namespace emqx-operator-system
+```
+
+This will install both the CRDs, the controller manager and relevant resources into the cluster. The controller manager will be deployed in the `emqx-operator-system` namespace.
+
+## Upgrading
+
+### From 2.2.x
+
+To upgrade from 2.2.x to 2.3.0, you need to patch the existing CRDs first to explicitly remove the conversion webhook.
+```sh
+kubectl patch crd emqxes.apps.emqx.io     --type=json -p='[{"op":"replace", "path":"/spec/conversion", "value":{"strategy":"None"}}]'
+kubectl patch crd rebalances.apps.emqx.io --type=json -p='[{"op":"replace", "path":"/spec/conversion", "value":{"strategy":"None"}}]'
+```
+
+After patching the CRDs, delete the existing controller manager deployment.
+```sh
+kubectl delete --ignore-not-found clusterrole emqx-operator-manager-role
+kubectl delete --ignore-not-found clusterrolebinding emqx-operator-manager-rolebinding
+kubectl delete --ignore-not-found mutatingwebhookconfiguration emqx-operator-mutating-webhook-configuration
+kubectl delete --ignore-not-found validatingwebhookconfiguration emqx-operator-validating-webhook-configuration
+kubectl delete --ignore-not-found namespace emqx-operator-system
+```
+
+Optionally, delete legacy CRDs.
+```sh
+kubectl delete --ignore-not-found crd emqxbrokers.apps.emqx.io emqxenterprises.apps.emqx.io emqxplugins.apps.emqx.io
+```
+
+After that, you can upgrade the operator by following usual installation steps.
+
+## Troubleshooting
+
+Operator exposes limited number of events to the Kubernetes API.
+```sh
+kubectl get events --sort-by=.lastTimestamp
+```
+
+Alternatively, if EMQX resources fail to reach `Ready` status condition, consult the controller manager logs for more details.
+```sh
+kubectl logs -l "control-plane=controller-manager" --tail=-1 --namespace emqx-operator-system
+```
+
+## Development
 
 ### Prerequisites
 - go version v1.22.0+
 - docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- kubectl version v1.24+.
+- Access to a Kubernetes v1.24+ cluster.
 
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `OPERATOR_IMAGE`:**
@@ -24,13 +89,11 @@ And it is required to have access to pull the image from the working environment
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
 **Install the CRDs into the cluster:**
-
 ```sh
 make install
 ```
 
 **Deploy the Manager to the cluster with the image specified by `OPERATOR_IMAGE`:**
-
 ```sh
 make deploy OPERATOR_IMAGE=<some-registry>/emqx-operator:tag
 ```
@@ -38,63 +101,29 @@ make deploy OPERATOR_IMAGE=<some-registry>/emqx-operator:tag
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
 ### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
+**Delete the CRDs from the cluster:**
 ```sh
 make uninstall
 ```
 
-**UnDeploy the controller from the cluster:**
-
+**Undeploy the controller:**
 ```sh
 make undeploy
 ```
 
-## Project Distribution
-
-Following are the steps to build the installer and distribute this project to users.
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer OPERATOR_IMAGE=<some-registry>/emqx-operator:tag
-```
-
-NOTE: The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without
-its dependencies.
-
-2. Using the installer
-
-Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/emqx-operator/<tag or branch>/dist/install.yaml
-```
-
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information.
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+Automatically generated files are kept in the repository for reference. Do not forget to update them when you make changes to the project.
+```sh
+make generate manifests
+git add config/crd/bases/
+git add api/**/zz_generated.deepcopy.go
+```
+
+More information can be found in the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
