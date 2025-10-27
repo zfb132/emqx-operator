@@ -2,7 +2,7 @@ package controller
 
 import (
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,7 +12,7 @@ type dsReflectPodCondition struct {
 	*EMQXReconciler
 }
 
-func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	// If DS cluster state is not loaded, skip the reconciliation step.
 	if r.dsCluster == nil {
 		return subResult{}
@@ -24,11 +24,11 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 			continue
 		}
 		condition := corev1.PodCondition{
-			Type:               appsv2beta1.DSReplicationSite,
+			Type:               crdv2.DSReplicationSite,
 			Status:             corev1.ConditionUnknown,
 			LastTransitionTime: metav1.Now(),
 		}
-		site := r.dsCluster.FindSite(node.Node)
+		site := r.dsCluster.FindSite(node.Name)
 		if site != nil {
 			if len(site.Shards) > 0 {
 				condition.Status = corev1.ConditionTrue
@@ -41,7 +41,7 @@ func (u *dsReflectPodCondition) reconcile(r *reconcileRound, instance *appsv2bet
 			// a DS replication site.
 			condition.Status = corev1.ConditionFalse
 		}
-		existing := util.FindPodCondition(pod, appsv2beta1.DSReplicationSite)
+		existing := util.FindPodCondition(pod, crdv2.DSReplicationSite)
 		if existing == nil || existing.Status != condition.Status {
 			err := util.UpdatePodCondition(r.ctx, u.Client, pod, condition)
 			if err != nil {

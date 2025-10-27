@@ -1,8 +1,6 @@
 package controller
 
-import (
-	corev1 "k8s.io/api/core/v1"
-)
+import corev1 "k8s.io/api/core/v1"
 
 func MergeServicePorts(ports1, ports2 []corev1.ServicePort) []corev1.ServicePort {
 	ports := append(ports1, ports2...)

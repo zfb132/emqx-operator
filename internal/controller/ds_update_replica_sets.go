@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 )
 
@@ -15,7 +15,7 @@ type dsUpdateReplicaSets struct {
 	*EMQXReconciler
 }
 
-func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	// If DS cluster state is not loaded, skip the reconciliation.
 	if r.dsCluster == nil || r.dsReplication == nil {
 		return subResult{}
@@ -49,9 +49,9 @@ func (u *dsUpdateReplicaSets) reconcile(r *reconcileRound, instance *appsv2beta1
 	for _, node := range instance.Status.CoreNodes {
 		pod := r.state.podWithName(node.PodName)
 		if pod != nil && r.state.partOfUpdateSet(pod, instance) {
-			site := r.dsCluster.FindSite(node.Node)
+			site := r.dsCluster.FindSite(node.Name)
 			if site == nil {
-				return subResult{err: emperror.Errorf("no site for node %s", node.Node)}
+				return subResult{err: emperror.Errorf("no site for node %s", node.Name)}
 			}
 			if getPodIndex(node.PodName) < desiredReplicas {
 				targetSites = append(targetSites, site.ID)

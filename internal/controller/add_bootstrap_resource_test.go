@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	"github.com/emqx/emqx-operator/internal/handler"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestGenerateNodeCookieSecret(t *testing.T) {
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "emqx",
@@ -60,13 +61,13 @@ func TestGenerateBootstrapAPIKeySecret(t *testing.T) {
 	// Create a context
 	ctx := ctx
 
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "emqx",
 		},
-		Spec: appsv2beta1.EMQXSpec{
-			BootstrapAPIKeys: []appsv2beta1.BootstrapAPIKey{
+		Spec: crdv2.EMQXSpec{
+			BootstrapAPIKeys: []crdv2.BootstrapAPIKey{
 				{
 					Key:    "test_key",
 					Secret: "test_secret",
@@ -92,7 +93,7 @@ func TestGenerateBootstrapAPIKeySecret(t *testing.T) {
 		usernames = append(usernames, user[:strings.Index(user, ":")])
 		secrets = append(secrets, user[strings.Index(user, ":")+1:])
 	}
-	assert.ElementsMatch(t, usernames, []string{appsv2beta1.DefaultBootstrapAPIKey, "test_key"})
+	assert.ElementsMatch(t, usernames, []string{resources.DefaultBootstrapAPIKey, "test_key"})
 	assert.Contains(t, secrets, "test_secret")
 }
 
@@ -144,20 +145,20 @@ func TestGenerateBootstrapAPIKeySecretWithSecretRef(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "emqx",
 		},
-		Spec: appsv2beta1.EMQXSpec{
-			BootstrapAPIKeys: []appsv2beta1.BootstrapAPIKey{
+		Spec: crdv2.EMQXSpec{
+			BootstrapAPIKeys: []crdv2.BootstrapAPIKey{
 				{
-					SecretRef: &appsv2beta1.SecretRef{
-						Key: appsv2beta1.KeyRef{
+					SecretRef: &crdv2.SecretRef{
+						Key: crdv2.KeyRef{
 							SecretName: "test-key-secret",
 							SecretKey:  "key",
 						},
-						Secret: appsv2beta1.KeyRef{
+						Secret: crdv2.KeyRef{
 							SecretName: "test-value-secret",
 							SecretKey:  "secret",
 						},
@@ -184,7 +185,7 @@ func TestGenerateBootstrapAPIKeySecretWithSecretRef(t *testing.T) {
 		usernames = append(usernames, user[:strings.Index(user, ":")])
 		secrets = append(secrets, user[strings.Index(user, ":")+1:])
 	}
-	assert.ElementsMatch(t, usernames, []string{appsv2beta1.DefaultBootstrapAPIKey, "test_key"})
+	assert.ElementsMatch(t, usernames, []string{resources.DefaultBootstrapAPIKey, "test_key"})
 	assert.Contains(t, secrets, "test_secret")
 }
 
@@ -219,7 +220,7 @@ func TestReadSecret(t *testing.T) {
 	}
 
 	// Create a context
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "default",

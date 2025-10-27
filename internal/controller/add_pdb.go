@@ -3,7 +3,7 @@ package controller
 import (
 	emperror "emperror.dev/errors"
 	semver "github.com/Masterminds/semver/v3"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +16,7 @@ type addPdb struct {
 	*EMQXReconciler
 }
 
-func (a *addPdb) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addPdb) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	discoveryClient, _ := discovery.NewDiscoveryClientForConfig(kubeConfig.GetConfigOrDie())
 	kubeVersion, _ := discoveryClient.ServerVersion()
 	v, _ := semver.NewVersion(kubeVersion.String())
@@ -42,7 +42,7 @@ func (a *addPdb) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subRes
 	return subResult{}
 }
 
-func generatePodDisruptionBudget(instance *appsv2beta1.EMQX) (*policyv1.PodDisruptionBudget, *policyv1.PodDisruptionBudget) {
+func generatePodDisruptionBudget(instance *crdv2.EMQX) (*policyv1.PodDisruptionBudget, *policyv1.PodDisruptionBudget) {
 	corePdb := &policyv1.PodDisruptionBudget{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "policy/v1",
@@ -51,25 +51,22 @@ func generatePodDisruptionBudget(instance *appsv2beta1.EMQX) (*policyv1.PodDisru
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: instance.Namespace,
 			Name:      instance.CoreNamespacedName().Name,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), instance.Labels),
+			Labels:    instance.DefaultLabelsWith(instance.Labels),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: appsv2beta1.CloneAndMergeMap(
-					appsv2beta1.DefaultCoreLabels(instance),
-					instance.Spec.CoreTemplate.Labels,
-				),
+				MatchLabels: instance.DefaultLabelsWith(crdv2.CoreLabels(), instance.Spec.CoreTemplate.Labels),
 			},
 			MinAvailable:   instance.Spec.CoreTemplate.Spec.MinAvailable,
 			MaxUnavailable: instance.Spec.CoreTemplate.Spec.MaxUnavailable,
 		},
 	}
 
-	if appsv2beta1.IsExistReplicant(instance) {
+	if instance.Spec.HasReplicants() {
 		replPdb := corePdb.DeepCopy()
 		replPdb.Name = instance.ReplicantNamespacedName().Name
-		replPdb.Spec.Selector.MatchLabels = appsv2beta1.CloneAndMergeMap(
-			appsv2beta1.DefaultReplicantLabels(instance),
+		replPdb.Spec.Selector.MatchLabels = instance.DefaultLabelsWith(
+			crdv2.ReplicantLabels(),
 			instance.Spec.ReplicantTemplate.Labels,
 		)
 		replPdb.Spec.MinAvailable = instance.Spec.ReplicantTemplate.Spec.MinAvailable
@@ -79,7 +76,7 @@ func generatePodDisruptionBudget(instance *appsv2beta1.EMQX) (*policyv1.PodDisru
 	return corePdb, nil
 }
 
-func generatePodDisruptionBudgetV1beta1(instance *appsv2beta1.EMQX) (*policyv1beta1.PodDisruptionBudget, *policyv1beta1.PodDisruptionBudget) {
+func generatePodDisruptionBudgetV1beta1(instance *crdv2.EMQX) (*policyv1beta1.PodDisruptionBudget, *policyv1beta1.PodDisruptionBudget) {
 	corePdb := &policyv1beta1.PodDisruptionBudget{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "policy/v1",
@@ -88,24 +85,21 @@ func generatePodDisruptionBudgetV1beta1(instance *appsv2beta1.EMQX) (*policyv1be
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: instance.Namespace,
 			Name:      instance.CoreNamespacedName().Name,
-			Labels:    appsv2beta1.CloneAndMergeMap(appsv2beta1.DefaultLabels(instance), instance.Labels),
+			Labels:    instance.DefaultLabelsWith(instance.Labels),
 		},
 		Spec: policyv1beta1.PodDisruptionBudgetSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: appsv2beta1.CloneAndMergeMap(
-					appsv2beta1.DefaultCoreLabels(instance),
-					instance.Spec.CoreTemplate.Labels,
-				),
+				MatchLabels: instance.DefaultLabelsWith(crdv2.CoreLabels(), instance.Spec.CoreTemplate.Labels),
 			},
 			MinAvailable:   instance.Spec.CoreTemplate.Spec.MinAvailable,
 			MaxUnavailable: instance.Spec.CoreTemplate.Spec.MaxUnavailable,
 		},
 	}
-	if appsv2beta1.IsExistReplicant(instance) {
+	if instance.Spec.HasReplicants() {
 		replPdb := corePdb.DeepCopy()
 		replPdb.Name = instance.ReplicantNamespacedName().Name
-		replPdb.Spec.Selector.MatchLabels = appsv2beta1.CloneAndMergeMap(
-			appsv2beta1.DefaultReplicantLabels(instance),
+		replPdb.Spec.Selector.MatchLabels = instance.DefaultLabelsWith(
+			crdv2.ReplicantLabels(),
 			instance.Spec.ReplicantTemplate.Labels,
 		)
 		replPdb.Spec.MinAvailable = instance.Spec.ReplicantTemplate.Spec.MinAvailable

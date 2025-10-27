@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -19,7 +19,7 @@ import (
 var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 	var s *cleanupOutdatedSets
 
-	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
+	var instance *crdv2.EMQX = &crdv2.EMQX{}
 	var ns *corev1.Namespace = &corev1.Namespace{}
 	var round *reconcileRound
 
@@ -36,10 +36,10 @@ var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
 		instance.Spec.RevisionHistoryLimit = 3
-		instance.Status = appsv2beta1.EMQXStatus{
+		instance.Status = crdv2.EMQXStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               appsv2beta1.Ready,
+					Type:               crdv2.Ready,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.Time{Time: time.Now().AddDate(0, 0, -1)},
 				},
@@ -56,27 +56,24 @@ var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: instance.Namespace,
-					Labels: appsv2beta1.CloneAndAddLabel(
-						appsv2beta1.DefaultReplicantLabels(instance),
-						appsv2beta1.LabelsPodTemplateHashKey,
-						fmt.Sprintf("fake-%d", i),
+					Labels: instance.DefaultLabelsWith(
+						crdv2.ReplicantLabels(),
+						map[string]string{crdv2.LabelPodTemplateHash: fmt.Sprintf("fake-%d", i)},
 					),
 				},
 				Spec: appsv1.ReplicaSetSpec{
 					Replicas: ptr.To(int32(0)),
 					Selector: &metav1.LabelSelector{
-						MatchLabels: appsv2beta1.CloneAndAddLabel(
-							appsv2beta1.DefaultReplicantLabels(instance),
-							appsv2beta1.LabelsPodTemplateHashKey,
-							fmt.Sprintf("fake-%d", i),
+						MatchLabels: instance.DefaultLabelsWith(
+							crdv2.ReplicantLabels(),
+							map[string]string{crdv2.LabelPodTemplateHash: fmt.Sprintf("fake-%d", i)},
 						),
 					},
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Labels: appsv2beta1.CloneAndAddLabel(
-								appsv2beta1.DefaultReplicantLabels(instance),
-								appsv2beta1.LabelsPodTemplateHashKey,
-								fmt.Sprintf("fake-%d", i),
+							Labels: instance.DefaultLabelsWith(
+								crdv2.ReplicantLabels(),
+								map[string]string{crdv2.LabelPodTemplateHash: fmt.Sprintf("fake-%d", i)},
 							),
 						},
 						Spec: corev1.PodSpec{
@@ -98,27 +95,24 @@ var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: instance.Namespace,
-					Labels: appsv2beta1.CloneAndAddLabel(
-						appsv2beta1.DefaultCoreLabels(instance),
-						appsv2beta1.LabelsPodTemplateHashKey,
-						fmt.Sprintf("fake-%d", i),
+					Labels: instance.DefaultLabelsWith(
+						crdv2.CoreLabels(),
+						map[string]string{crdv2.LabelPodTemplateHash: fmt.Sprintf("fake-%d", i)},
 					),
 				},
 				Spec: appsv1.StatefulSetSpec{
 					Replicas: ptr.To(int32(0)),
 					Selector: &metav1.LabelSelector{
-						MatchLabels: appsv2beta1.CloneAndAddLabel(
-							appsv2beta1.DefaultCoreLabels(instance),
-							appsv2beta1.LabelsPodTemplateHashKey,
-							fmt.Sprintf("fake-%d", i),
+						MatchLabels: instance.DefaultLabelsWith(
+							crdv2.CoreLabels(),
+							map[string]string{crdv2.LabelPodTemplateHash: fmt.Sprintf("fake-%d", i)},
 						),
 					},
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Labels: appsv2beta1.CloneAndAddLabel(
-								appsv2beta1.DefaultCoreLabels(instance),
-								appsv2beta1.LabelsPodTemplateHashKey,
-								fmt.Sprintf("fake-%d", i),
+							Labels: instance.DefaultLabelsWith(
+								crdv2.CoreLabels(),
+								map[string]string{crdv2.LabelPodTemplateHash: fmt.Sprintf("fake-%d", i)},
 							),
 						},
 						Spec: corev1.PodSpec{
@@ -162,7 +156,7 @@ var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 			list := &appsv1.ReplicaSetList{}
 			_ = k8sClient.List(ctx, list,
 				client.InNamespace(instance.Namespace),
-				client.MatchingLabels(appsv2beta1.DefaultReplicantLabels(instance)),
+				client.MatchingLabels(instance.DefaultLabelsWith(crdv2.ReplicantLabels())),
 			)
 			count := 0
 			for _, rs := range list.Items {
@@ -177,7 +171,7 @@ var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 			list := &appsv1.StatefulSetList{}
 			_ = k8sClient.List(ctx, list,
 				client.InNamespace(instance.Namespace),
-				client.MatchingLabels(appsv2beta1.DefaultCoreLabels(instance)),
+				client.MatchingLabels(instance.DefaultLabelsWith(crdv2.CoreLabels())),
 			)
 			count := 0
 			for _, sts := range list.Items {
@@ -192,7 +186,7 @@ var _ = Describe("Reconciler cleanupOutdatedSets", func() {
 			list := &corev1.PersistentVolumeClaimList{}
 			_ = k8sClient.List(ctx, list,
 				client.InNamespace(instance.Namespace),
-				client.MatchingLabels(appsv2beta1.DefaultCoreLabels(instance)),
+				client.MatchingLabels(instance.DefaultLabelsWith(crdv2.CoreLabels())),
 			)
 			count := 0
 			for _, pvc := range list.Items {

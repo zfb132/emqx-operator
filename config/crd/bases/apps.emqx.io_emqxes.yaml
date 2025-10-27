@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.3
+    controller-gen.kubebuilder.io/version: v0.18.0
   name: emqxes.apps.emqx.io
 spec:
   group: apps.emqx.io
@@ -23,7 +23,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v2beta1
+    name: v2
     schema:
       openAPIV3Schema:
         description: EMQX is the Schema for the emqxes API.
@@ -121,6 +121,23 @@ spec:
                     description: |-
                       Standard object's metadata.
                       More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      finalizers:
+                        items:
+                          type: string
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      name:
+                        type: string
+                      namespace:
+                        type: string
                     type: object
                   spec:
                     description: |-
@@ -3449,6 +3466,23 @@ spec:
                                         May contain labels and annotations that will be copied into the PVC
                                         when creating it. No other fields are allowed and will be rejected during
                                         validation.
+                                      properties:
+                                        annotations:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                        finalizers:
+                                          items:
+                                            type: string
+                                          type: array
+                                        labels:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                        name:
+                                          type: string
+                                        namespace:
+                                          type: string
                                       type: object
                                     spec:
                                       description: |-
@@ -7713,6 +7747,23 @@ spec:
                     description: |-
                       Standard object's metadata.
                       More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      finalizers:
+                        items:
+                          type: string
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      name:
+                        type: string
+                      namespace:
+                        type: string
                     type: object
                   spec:
                     description: |-
@@ -8111,6 +8162,23 @@ spec:
                     description: |-
                       Standard object's metadata.
                       More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      finalizers:
+                        items:
+                          type: string
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      name:
+                        type: string
+                      namespace:
+                        type: string
                     type: object
                   spec:
                     description: |-
@@ -8466,6 +8534,23 @@ spec:
                     description: |-
                       Standard object's metadata.
                       More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      finalizers:
+                        items:
+                          type: string
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      name:
+                        type: string
+                      namespace:
+                        type: string
                     type: object
                   spec:
                     description: |-
@@ -11795,6 +11880,23 @@ spec:
                                         May contain labels and annotations that will be copied into the PVC
                                         when creating it. No other fields are allowed and will be rejected during
                                         validation.
+                                      properties:
+                                        annotations:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                        finalizers:
+                                          items:
+                                            type: string
+                                          type: array
+                                        labels:
+                                          additionalProperties:
+                                            type: string
+                                          type: object
+                                        name:
+                                          type: string
+                                        namespace:
+                                          type: string
                                       type: object
                                     spec:
                                       description: |-
@@ -15977,35 +16079,43 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               coreNodes:
                 items:
                   properties:
                     connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `connections`
-                        field means the number of MQTT session count,
+                      description: Number of connected MQTT clients
                       format: int64
                       type: integer
-                    live_connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `live_connections`
-                        field means the number of connected MQTT clients.
-                      format: int64
-                      type: integer
-                    node:
-                      description: 'EMQX node name, example: emqx@127.0.0.1'
+                    name:
+                      description: Node name
+                      example: emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local
                       type: string
-                    node_status:
-                      description: 'EMQX node status, example: Running'
-                      type: string
-                    otp_release:
-                      description: 'Erlang/OTP version used by EMQX, example: 24.2/12.2'
+                    otpRelease:
+                      description: Erlang/OTP version node is running on
+                      example: 27.3.4.2-2/15.2.7.1
                       type: string
                     podName:
+                      description: Corresponding pod name
+                      example: emqx-core-557c8b7684-0
                       type: string
                     role:
-                      description: 'EMQX cluster node role, enum: "core" "replicant"'
+                      description: Node role, either "core" or "replicant"
+                      example: core
+                      type: string
+                    sessions:
+                      description: Number of MQTT sessions
+                      format: int64
+                      type: integer
+                    status:
+                      description: Node status
+                      example: running
                       type: string
                     version:
                       description: EMQX version
+                      example: 5.10.1
                       type: string
                   type: object
                 type: array
@@ -16038,23 +16148,34 @@ spec:
                     items:
                       properties:
                         lostShardReplicas:
+                          description: Total number of shard replicas belonging to
+                            lost sites
                           format: int32
                           type: integer
                         maxReplicas:
+                          description: Maximum replication factor among database shards
                           format: int32
                           type: integer
                         minReplicas:
+                          description: Minimum replication factor among database shards
                           format: int32
                           type: integer
                         name:
+                          description: Name of the database
+                          example: messages
                           type: string
                         numShardReplicas:
+                          description: Total number of shard replicas
+                          example: 48
                           format: int32
                           type: integer
                         numShards:
+                          description: Number of shards of the database
+                          example: 16
                           format: int32
                           type: integer
                         numTransitions:
+                          description: Current number of shard ownership transitions
                           format: int32
                           type: integer
                       required:
@@ -16071,72 +16192,72 @@ spec:
               nodeEvacuationsStatus:
                 items:
                   properties:
-                    connection_eviction_rate:
+                    connectionEvictionRate:
                       format: int32
                       type: integer
-                    connection_goal:
+                    initialConnections:
+                      description: Initial number of connections to this node
                       format: int32
                       type: integer
-                    node:
+                    initialSessions:
+                      description: Initial number of sessions on this node
+                      format: int32
+                      type: integer
+                    nodeName:
+                      description: Evacuated node name
+                      example: emqx@10.0.0.1
                       type: string
-                    session_eviction_rate:
+                    sessionEvictionRate:
                       format: int32
                       type: integer
-                    session_goal:
-                      format: int32
-                      type: integer
-                    session_recipients:
+                    sessionRecipients:
+                      description: Session recipients
+                      example:
+                      - emqx@10.0.0.2
+                      - emqx@10.0.0.3
                       items:
                         type: string
                       type: array
                     state:
+                      description: Evacuation state
+                      example: evicting_sessions
                       type: string
-                    stats:
-                      properties:
-                        current_connected:
-                          format: int32
-                          type: integer
-                        current_sessions:
-                          format: int32
-                          type: integer
-                        initial_connected:
-                          format: int32
-                          type: integer
-                        initial_sessions:
-                          format: int32
-                          type: integer
-                      type: object
                   type: object
                 type: array
               replicantNodes:
                 items:
                   properties:
                     connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `connections`
-                        field means the number of MQTT session count,
+                      description: Number of connected MQTT clients
                       format: int64
                       type: integer
-                    live_connections:
-                      description: In EMQX's API of `/api/v5/nodes`, the `live_connections`
-                        field means the number of connected MQTT clients.
-                      format: int64
-                      type: integer
-                    node:
-                      description: 'EMQX node name, example: emqx@127.0.0.1'
+                    name:
+                      description: Node name
+                      example: emqx@emqx-core-557c8b7684-0.emqx-headless.default.svc.cluster.local
                       type: string
-                    node_status:
-                      description: 'EMQX node status, example: Running'
-                      type: string
-                    otp_release:
-                      description: 'Erlang/OTP version used by EMQX, example: 24.2/12.2'
+                    otpRelease:
+                      description: Erlang/OTP version node is running on
+                      example: 27.3.4.2-2/15.2.7.1
                       type: string
                     podName:
+                      description: Corresponding pod name
+                      example: emqx-core-557c8b7684-0
                       type: string
                     role:
-                      description: 'EMQX cluster node role, enum: "core" "replicant"'
+                      description: Node role, either "core" or "replicant"
+                      example: core
+                      type: string
+                    sessions:
+                      description: Number of MQTT sessions
+                      format: int64
+                      type: integer
+                    status:
+                      description: Node status
+                      example: running
                       type: string
                     version:
                       description: EMQX version
+                      example: 5.10.1
                       type: string
                   type: object
                 type: array

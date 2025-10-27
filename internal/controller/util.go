@@ -13,7 +13,7 @@ import (
 	emperror "emperror.dev/errors"
 	"github.com/cisco-open/k8s-objectmatcher/patch"
 	"github.com/davecgh/go-spew/spew"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	"github.com/tidwall/gjson"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func checkInitialDelaySecondsReady(instance *appsv2beta1.EMQX) bool {
-	_, condition := instance.Status.GetCondition(appsv2beta1.Available)
+func checkInitialDelaySecondsReady(instance *crdv2.EMQX) bool {
+	_, condition := instance.Status.GetCondition(crdv2.Available)
 	if condition == nil || condition.Status != metav1.ConditionTrue {
 		return false
 	}
@@ -40,9 +40,7 @@ func justCheckPodTemplate() patch.CalculateOption {
 		_ = json.Unmarshal([]byte(podTemplateSpecJson.String()), podTemplateSpec)
 
 		// Remove the podTemplateHashLabelKey from the podTemplateSpec
-		if _, ok := podTemplateSpec.Labels[appsv2beta1.LabelsPodTemplateHashKey]; ok {
-			podTemplateSpec.Labels = appsv2beta1.CloneAndRemoveLabel(podTemplateSpec.Labels, appsv2beta1.LabelsPodTemplateHashKey)
-		}
+		delete(podTemplateSpec.Labels, crdv2.LabelPodTemplateHash)
 
 		emptyRs := &appsv1.ReplicaSet{}
 		emptyRs.Spec.Template = *podTemplateSpec

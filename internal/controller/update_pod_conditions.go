@@ -2,7 +2,7 @@ package controller
 
 import (
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	corev1 "k8s.io/api/core/v1"
@@ -12,12 +12,12 @@ type updatePodConditions struct {
 	*EMQXReconciler
 }
 
-func (u *updatePodConditions) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (u *updatePodConditions) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	for _, pod := range r.state.pods {
-		onServingCondition := util.FindPodCondition(pod, appsv2beta1.PodOnServing)
+		onServingCondition := util.FindPodCondition(pod, crdv2.PodOnServing)
 		if onServingCondition == nil {
 			onServingCondition = &corev1.PodCondition{
-				Type:   appsv2beta1.PodOnServing,
+				Type:   crdv2.PodOnServing,
 				Status: corev1.ConditionUnknown,
 			}
 		}
@@ -30,7 +30,7 @@ func (u *updatePodConditions) reconcile(r *reconcileRound, instance *appsv2beta1
 		} else {
 			if r.state.partOfCurrentSet(pod, instance) {
 				// When available condition is true, need clean currentSts / currentRs pod
-				if instance.Status.IsConditionTrue(appsv2beta1.Available) {
+				if instance.Status.IsConditionTrue(crdv2.Available) {
 					if util.IsPodConditionTrue(pod, corev1.ContainersReady) {
 						util.SwitchPodConditionStatus(onServingCondition, corev1.ConditionFalse)
 					}

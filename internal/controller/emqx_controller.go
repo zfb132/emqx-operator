@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
 	req "github.com/emqx/emqx-operator/internal/requester"
@@ -67,7 +67,7 @@ type subResult struct {
 }
 
 type subReconciler interface {
-	reconcile(*reconcileRound, *appsv2beta1.EMQX) subResult
+	reconcile(*reconcileRound, *crdv2.EMQX) subResult
 }
 
 func subReconcilerName(s subReconciler) string {
@@ -100,7 +100,7 @@ func NewEMQXReconciler(mgr manager.Manager) *EMQXReconciler {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
 func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	instance := &appsv2beta1.EMQX{}
+	instance := &crdv2.EMQX{}
 	if err := r.Client.Get(ctx, req.NamespacedName, instance); err != nil {
 		if k8sErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -159,7 +159,7 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
-	isStable := instance.Status.IsConditionTrue(appsv2beta1.Ready) && instance.Status.DSReplication.IsStable()
+	isStable := instance.Status.IsConditionTrue(crdv2.Ready) && instance.Status.DSReplication.IsStable()
 	if !isStable {
 		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
@@ -169,7 +169,7 @@ func (r *EMQXReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // SetupWithManager sets up the controller with the Manager.
 func (r *EMQXReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv2beta1.EMQX{}).
+		For(&crdv2.EMQX{}).
 		Named("emqx").
 		Complete(r)
 }

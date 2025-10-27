@@ -32,7 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
+	crdv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	"github.com/emqx/emqx-operator/internal/emqx/api"
@@ -70,7 +71,7 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Reconcile rebalance")
 
-	rebalance := &appsv2beta1.Rebalance{}
+	rebalance := &crdv2beta1.Rebalance{}
 	if err := r.Client.Get(ctx, request.NamespacedName, rebalance); err != nil {
 		if k8sErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -78,7 +79,7 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	emqx := &appsv2beta1.EMQX{}
+	emqx := &crdv2.EMQX{}
 	if err := r.Client.Get(ctx, client.ObjectKey{
 		Name:      rebalance.Spec.InstanceName,
 		Namespace: rebalance.Namespace,
@@ -90,8 +91,8 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 			controllerutil.RemoveFinalizer(rebalance, finalizer)
 			return ctrl.Result{}, r.Client.Update(ctx, rebalance)
 		}
-		_ = rebalance.Status.SetFailed(appsv2beta1.RebalanceCondition{
-			Type:    appsv2beta1.RebalanceConditionFailed,
+		_ = rebalance.Status.SetFailed(crdv2beta1.RebalanceCondition{
+			Type:    crdv2beta1.RebalanceConditionFailed,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf("EMQX %s is not found", rebalance.Spec.InstanceName),
 		})
@@ -99,10 +100,10 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	// check if emqx is ready
-	if !emqx.Status.IsConditionTrue(appsv2beta1.Ready) {
+	if !emqx.Status.IsConditionTrue(crdv2.Ready) {
 		// return ctrl.Result{}, emperror.New("EMQX is not ready")
-		_ = rebalance.Status.SetFailed(appsv2beta1.RebalanceCondition{
-			Type:    appsv2beta1.RebalanceConditionFailed,
+		_ = rebalance.Status.SetFailed(crdv2beta1.RebalanceCondition{
+			Type:    crdv2beta1.RebalanceConditionFailed,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf("EMQX %s is not ready", rebalance.Spec.InstanceName),
 		})
@@ -131,7 +132,7 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	if !rebalance.DeletionTimestamp.IsZero() {
-		if rebalance.Status.Phase == appsv2beta1.RebalancePhaseProcessing {
+		if rebalance.Status.Phase == crdv2beta1.RebalancePhaseProcessing {
 			coordinatorNode := rebalance.Status.RebalanceStates[0].CoordinatorNode
 			_ = api.StopRebalance(req, coordinatorNode)
 		}
@@ -171,75 +172,70 @@ func (r *RebalanceReconciler) Reconcile(ctx context.Context, request ctrl.Reques
 // SetupWithManager sets up the controller with the Manager.
 func (r *RebalanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv2beta1.Rebalance{}).
+		For(&crdv2beta1.Rebalance{}).
 		Named("rebalance").
 		Complete(r)
 }
 
-func rebalanceStatusHandler(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebalance, req req.RequesterInterface) {
+func rebalanceStatusHandler(emqx *crdv2.EMQX, rebalance *crdv2beta1.Rebalance, req req.RequesterInterface) {
 	switch rebalance.Status.Phase {
 	case "":
 		if err := startRebalance(emqx, rebalance, req); err != nil {
-			_ = rebalance.Status.SetFailed(appsv2beta1.RebalanceCondition{
-				Type:    appsv2beta1.RebalanceConditionFailed,
+			_ = rebalance.Status.SetFailed(crdv2beta1.RebalanceCondition{
+				Type:    crdv2beta1.RebalanceConditionFailed,
 				Status:  corev1.ConditionTrue,
 				Message: fmt.Sprintf("Failed to start rebalance: %v", err.Error()),
 			})
 			rebalance.Status.RebalanceStates = nil
 		}
-		_ = rebalance.Status.SetProcessing(appsv2beta1.RebalanceCondition{
-			Type:   appsv2beta1.RebalanceConditionProcessing,
+		_ = rebalance.Status.SetProcessing(crdv2beta1.RebalanceCondition{
+			Type:   crdv2beta1.RebalanceConditionProcessing,
 			Status: corev1.ConditionTrue,
 		})
-	case appsv2beta1.RebalancePhaseProcessing:
+	case crdv2beta1.RebalancePhaseProcessing:
 		rebalanceStates, err := getRebalanceStatus(req)
 		if err != nil {
-			_ = rebalance.Status.SetFailed(appsv2beta1.RebalanceCondition{
-				Type:    appsv2beta1.RebalanceConditionFailed,
+			_ = rebalance.Status.SetFailed(crdv2beta1.RebalanceCondition{
+				Type:    crdv2beta1.RebalanceConditionFailed,
 				Status:  corev1.ConditionTrue,
 				Message: fmt.Sprintf("Failed to get rebalance status: %s", err.Error()),
 			})
 		}
 
 		if len(rebalanceStates) == 0 {
-			_ = rebalance.Status.SetCompleted(appsv2beta1.RebalanceCondition{
-				Type:   appsv2beta1.RebalanceConditionCompleted,
+			_ = rebalance.Status.SetCompleted(crdv2beta1.RebalanceCondition{
+				Type:   crdv2beta1.RebalanceConditionCompleted,
 				Status: corev1.ConditionTrue,
 			})
 			rebalance.Status.RebalanceStates = nil
 		}
 
-		_ = rebalance.Status.SetProcessing(appsv2beta1.RebalanceCondition{
-			Type:   appsv2beta1.RebalanceConditionProcessing,
+		_ = rebalance.Status.SetProcessing(crdv2beta1.RebalanceCondition{
+			Type:   crdv2beta1.RebalanceConditionProcessing,
 			Status: corev1.ConditionTrue,
 		})
 		rebalance.Status.RebalanceStates = rebalanceStates
-	case appsv2beta1.RebalancePhaseFailed, appsv2beta1.RebalancePhaseCompleted:
+	case crdv2beta1.RebalancePhaseFailed, crdv2beta1.RebalancePhaseCompleted:
 		rebalance.Status.RebalanceStates = nil
 	default:
 		panic("unknown rebalance phase")
 	}
 }
 
-func startRebalance(emqx *appsv2beta1.EMQX, rebalance *appsv2beta1.Rebalance, req req.RequesterInterface) error {
-	return api.StartRebalance(req, rebalance.Spec.RebalanceStrategy, getEmqxNodes(emqx))
-}
-
-func getRebalanceStatus(req req.RequesterInterface) ([]appsv2beta1.RebalanceState, error) {
-	return api.GetRebalanceStatus(req)
-}
-
-// helper functions
-func getEmqxNodes(emqx *appsv2beta1.EMQX) []string {
+func startRebalance(emqx *crdv2.EMQX, rebalance *crdv2beta1.Rebalance, req req.RequesterInterface) error {
 	nodes := []string{}
 	if len(emqx.Status.ReplicantNodes) == 0 {
 		for _, node := range emqx.Status.CoreNodes {
-			nodes = append(nodes, node.Node)
+			nodes = append(nodes, node.Name)
 		}
 	} else {
 		for _, node := range emqx.Status.ReplicantNodes {
-			nodes = append(nodes, node.Node)
+			nodes = append(nodes, node.Name)
 		}
 	}
-	return nodes
+	return api.StartRebalance(req, rebalance.Spec.RebalanceStrategy, nodes)
+}
+
+func getRebalanceStatus(req req.RequesterInterface) ([]crdv2beta1.RebalanceState, error) {
+	return api.GetRebalanceStatus(req)
 }

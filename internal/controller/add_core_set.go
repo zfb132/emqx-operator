@@ -7,7 +7,7 @@ import (
 
 	emperror "emperror.dev/errors"
 	"github.com/cisco-open/k8s-objectmatcher/patch"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
@@ -26,9 +26,9 @@ type addCoreSet struct {
 	*EMQXReconciler
 }
 
-func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) subResult {
+func (a *addCoreSet) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResult {
 	sts := newStatefulSet(instance, r.conf)
-	stsHash := sts.Labels[appsv2beta1.LabelsPodTemplateHashKey]
+	stsHash := sts.Labels[crdv2.LabelPodTemplateHash]
 
 	needCreate := false
 	updateCoreSet := r.state.updateCoreSet(instance)
@@ -55,7 +55,7 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 		if err := a.Handler.Create(r.ctx, sts); err != nil {
 			if k8sErrors.IsAlreadyExists(emperror.Cause(err)) {
 				cond := instance.Status.GetLastTrueCondition()
-				if cond != nil && cond.Type != appsv2beta1.Available && cond.Type != appsv2beta1.Ready {
+				if cond != nil && cond.Type != crdv2.Available && cond.Type != crdv2.Ready {
 					// Sometimes the updated statefulSet will not be ready, because the EMQX node can not be started.
 					// And then we will rollback EMQX CR spec, the EMQX operator controller will create a new statefulSet.
 					// But the new statefulSet will be the same as the previous one, so we didn't need to create it, just change the EMQX status.
@@ -111,19 +111,19 @@ func (a *addCoreSet) reconcile(r *reconcileRound, instance *appsv2beta1.EMQX) su
 	return subResult{}
 }
 
-func (a *addCoreSet) updateEMQXStatus(r *reconcileRound, instance *appsv2beta1.EMQX, reason, podTemplateHash string) error {
+func (a *addCoreSet) updateEMQXStatus(r *reconcileRound, instance *crdv2.EMQX, reason, podTemplateHash string) error {
 	instance.Status.ResetConditions(reason)
 	instance.Status.CoreNodesStatus.UpdateRevision = podTemplateHash
 	return a.Client.Status().Update(r.ctx, instance)
 }
 
-func newStatefulSet(instance *appsv2beta1.EMQX, conf *config.EMQX) *appsv1.StatefulSet {
+func newStatefulSet(instance *crdv2.EMQX, conf *config.EMQX) *appsv1.StatefulSet {
 	sts := generateStatefulSet(instance)
-	podTemplateSpecHash := computeHash(sts.Spec.Template.DeepCopy(), instance.Status.CoreNodesStatus.CollisionCount)
-	sts.Name = sts.Name + "-" + podTemplateSpecHash
-	sts.Labels = appsv2beta1.CloneAndAddLabel(sts.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	sts.Spec.Selector = appsv2beta1.CloneSelectorAndAddLabel(sts.Spec.Selector, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
-	sts.Spec.Template.Labels = appsv2beta1.CloneAndAddLabel(sts.Spec.Template.Labels, appsv2beta1.LabelsPodTemplateHashKey, podTemplateSpecHash)
+	podTemplateHash := computeHash(sts.Spec.Template.DeepCopy(), instance.Status.CoreNodesStatus.CollisionCount)
+	sts.Name = sts.Name + "-" + podTemplateHash
+	sts.Labels[crdv2.LabelPodTemplateHash] = podTemplateHash
+	sts.Spec.Template.Labels[crdv2.LabelPodTemplateHash] = podTemplateHash
+	sts.Spec.Selector = util.CloneSelectorAndAddLabel(sts.Spec.Selector, crdv2.LabelPodTemplateHash, podTemplateHash)
 	sts.Spec.Template.Spec.Containers[0].Ports = util.MergeContainerPorts(
 		sts.Spec.Template.Spec.Containers[0].Ports,
 		util.MapServicePortsToContainerPorts(conf.GetDashboardServicePorts()),
@@ -131,12 +131,7 @@ func newStatefulSet(instance *appsv2beta1.EMQX, conf *config.EMQX) *appsv1.State
 	return sts
 }
 
-func generateStatefulSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
-	labels := appsv2beta1.CloneAndMergeMap(
-		appsv2beta1.DefaultCoreLabels(instance),
-		instance.Spec.CoreTemplate.Labels,
-	)
-
+func generateStatefulSet(instance *crdv2.EMQX) *appsv1.StatefulSet {
 	// Add a PreStop hook to leave the cluster when the pod is asked to stop.
 	// This is especially important when DS Raft is enabled, otherwise there will be a
 	// lot of leftover records in the DS cluster metadata.
@@ -165,24 +160,24 @@ func generateStatefulSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
 			Namespace:   instance.Namespace,
 			Name:        instance.CoreNamespacedName().Name,
 			Annotations: instance.Spec.CoreTemplate.DeepCopy().Annotations,
-			Labels:      labels,
+			Labels:      statefulSetLabels(instance),
 		},
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName: instance.HeadlessServiceNamespacedName().Name,
 			Replicas:    instance.Spec.CoreTemplate.Spec.Replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: statefulSetLabels(instance),
 			},
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: instance.Spec.CoreTemplate.DeepCopy().Annotations,
-					Labels:      labels,
+					Labels:      statefulSetLabels(instance),
 				},
 				Spec: corev1.PodSpec{
 					ReadinessGates: []corev1.PodReadinessGate{
 						{
-							ConditionType: appsv2beta1.PodOnServing,
+							ConditionType: crdv2.PodOnServing,
 						},
 					},
 					ImagePullSecrets:          instance.Spec.ImagePullSecrets,
@@ -196,7 +191,7 @@ func generateStatefulSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
 					InitContainers:            instance.Spec.CoreTemplate.Spec.InitContainers,
 					Containers: append([]corev1.Container{
 						{
-							Name:            appsv2beta1.DefaultContainerName,
+							Name:            crdv2.DefaultContainerName,
 							Image:           instance.Spec.Image,
 							ImagePullPolicy: instance.Spec.ImagePullPolicy,
 							Command:         instance.Spec.CoreTemplate.Spec.Command,
@@ -289,7 +284,7 @@ func generateStatefulSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      instance.CoreNamespacedName().Name + "-data",
 					Namespace: instance.Namespace,
-					Labels:    labels,
+					Labels:    statefulSetLabels(instance),
 				},
 				Spec: *volumeClaimTemplates,
 			},
@@ -306,4 +301,9 @@ func generateStatefulSet(instance *appsv2beta1.EMQX) *appsv1.StatefulSet {
 	}
 
 	return sts
+}
+
+// Combine instance labels, core labels and template labels.
+func statefulSetLabels(instance *crdv2.EMQX) map[string]string {
+	return instance.DefaultLabelsWith(crdv2.CoreLabels(), instance.Spec.CoreTemplate.Labels)
 }

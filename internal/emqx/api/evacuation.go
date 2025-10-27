@@ -6,31 +6,49 @@ import (
 	"strings"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
 )
 
-type nodeEvacuationStatus struct {
-	Evacuations []appsv2beta1.NodeEvacuationStatus `json:"evacuations"`
+type nodeEvacuationStatusResponse struct {
+	Evacuations []NodeEvacuationStatus `json:"evacuations"`
 }
 
-func NodeEvacuationStatus(req req.RequesterInterface) ([]appsv2beta1.NodeEvacuationStatus, error) {
+type NodeEvacuationStatus struct {
+	Node                   string              `json:"node,omitempty"`
+	Stats                  NodeEvacuationStats `json:"stats,omitempty"`
+	State                  string              `json:"state,omitempty"`
+	SessionRecipients      []string            `json:"session_recipients,omitempty"`
+	SessionGoal            int32               `json:"session_goal,omitempty"`
+	SessionEvictionRate    int32               `json:"session_eviction_rate,omitempty"`
+	ConnectionGoal         int32               `json:"connection_goal,omitempty"`
+	ConnectionEvictionRate int32               `json:"connection_eviction_rate,omitempty"`
+}
+
+type NodeEvacuationStats struct {
+	InitialSessions  int32 `json:"initial_sessions,omitempty"`
+	InitialConnected int32 `json:"initial_connected,omitempty"`
+	CurrentSessions  int32 `json:"current_sessions,omitempty"`
+	CurrentConnected int32 `json:"current_connected,omitempty"`
+}
+
+func ClusterEvacuationStatus(req req.RequesterInterface) ([]NodeEvacuationStatus, error) {
 	body, err := get(req, "api/v5/load_rebalance/global_status")
 	if err != nil {
 		return nil, err
 	}
 
-	nodeEvacuationStatus := nodeEvacuationStatus{}
-	if err := json.Unmarshal(body, &nodeEvacuationStatus); err != nil {
+	response := nodeEvacuationStatusResponse{}
+	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, emperror.Wrap(err, "unexpected node evacuation status format")
 	}
-	return nodeEvacuationStatus.Evacuations, nil
+	return response.Evacuations, nil
 }
 
 func StartEvacuation(
 	r req.RequesterInterface,
-	strategy appsv2beta1.EvacuationStrategy,
+	strategy crdv2.EvacuationStrategy,
 	migrateTo []string,
 	nodeName string,
 ) error {

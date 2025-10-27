@@ -43,7 +43,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
+	crdv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	// +kubebuilder:scaffold:imports
@@ -63,16 +64,16 @@ var timeout, interval time.Duration
 
 var emqxReconciler *EMQXReconciler
 var emqxConf *config.EMQX
-var emqx *appsv2beta1.EMQX = &appsv2beta1.EMQX{
+var emqx *crdv2.EMQX = &crdv2.EMQX{
 	ObjectMeta: metav1.ObjectMeta{
 		UID:  "fake-1234567890",
 		Name: "emqx",
 		Labels: map[string]string{
-			appsv2beta1.LabelsManagedByKey: "emqx-operator",
-			appsv2beta1.LabelsInstanceKey:  "emqx",
+			crdv2.LabelManagedBy: "emqx-operator",
+			crdv2.LabelInstance:  "emqx",
 		},
 	},
-	Spec: appsv2beta1.EMQXSpec{
+	Spec: crdv2.EMQXSpec{
 		Image: "emqx",
 	},
 }
@@ -117,7 +118,10 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = appsv2beta1.AddToScheme(scheme.Scheme)
+	err = crdv2.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = crdv2beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme

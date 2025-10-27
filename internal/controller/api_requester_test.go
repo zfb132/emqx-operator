@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -18,53 +18,48 @@ func TestRequesterFilter(t *testing.T) {
 	var coreSetName string = "emqx-core-cur"
 	var coreSetUID types.UID = "123"
 
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "emqx",
 		},
-		Status: appsv2beta1.EMQXStatus{
-			CoreNodesStatus: appsv2beta1.EMQXNodesStatus{
+		Status: crdv2.EMQXStatus{
+			CoreNodesStatus: crdv2.EMQXNodesStatus{
 				Replicas:        2,
 				CurrentRevision: "cur",
 				UpdateRevision:  "upd",
 			},
-			ReplicantNodesStatus: appsv2beta1.EMQXNodesStatus{
+			ReplicantNodesStatus: crdv2.EMQXNodesStatus{
 				Replicas:        0,
 				CurrentRevision: "cur",
 				UpdateRevision:  "upd",
 			},
-			CoreNodes: []appsv2beta1.EMQXNode{
+			CoreNodes: []crdv2.EMQXNode{
 				{
 					PodName:     coreSetName + "-0",
-					Node:        "emqx@core-0",
-					NodeStatus:  "running",
+					Name:        "emqx@core-0",
+					Status:      "running",
 					OTPRelease:  "27.2-3/15.2",
 					Version:     "5.10.0",
 					Role:        "core",
-					Session:     0,
+					Sessions:    0,
 					Connections: 0,
-					Uptime:      0,
 				},
 				{
 					PodName:     coreSetName + "-1",
-					Node:        "emqx@core-1",
-					NodeStatus:  "running",
+					Name:        "emqx@core-1",
+					Status:      "running",
 					OTPRelease:  "27.2-3/15.2",
 					Version:     "5.10.0",
 					Role:        "core",
-					Session:     0,
+					Sessions:    0,
 					Connections: 0,
-					Uptime:      0,
 				},
 			},
-			ReplicantNodes: []appsv2beta1.EMQXNode{},
+			ReplicantNodes: []crdv2.EMQXNode{},
 		},
 	}
 
-	coreLabels := map[string]string{
-		appsv2beta1.LabelsDBRoleKey: "core",
-	}
 	coreOwnerReference := metav1.OwnerReference{
 		APIVersion: "apps/v1",
 		Kind:       "StatefulSet",
@@ -79,7 +74,7 @@ func TestRequesterFilter(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   coreSetName,
 					UID:    coreSetUID,
-					Labels: map[string]string{appsv2beta1.LabelsPodTemplateHashKey: "cur"},
+					Labels: map[string]string{crdv2.LabelPodTemplateHash: "cur"},
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas: 2,
@@ -91,7 +86,7 @@ func TestRequesterFilter(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              coreSetName + "-0",
-					Labels:            coreLabels,
+					Labels:            crdv2.CoreLabels(),
 					CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
 					OwnerReferences:   []metav1.OwnerReference{coreOwnerReference},
 				},
@@ -104,7 +99,7 @@ func TestRequesterFilter(t *testing.T) {
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              coreSetName + "-1",
-					Labels:            coreLabels,
+					Labels:            crdv2.CoreLabels(),
 					CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Second)),
 					OwnerReferences:   []metav1.OwnerReference{coreOwnerReference},
 				},

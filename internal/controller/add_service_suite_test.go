@@ -1,7 +1,7 @@
 package controller
 
 import (
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -11,7 +11,7 @@ import (
 
 var _ = Describe("Reconciler addService", Ordered, func() {
 	var a *addService
-	var instance *appsv2beta1.EMQX = new(appsv2beta1.EMQX)
+	var instance *crdv2.EMQX = &crdv2.EMQX{}
 	var ns *corev1.Namespace = &corev1.Namespace{}
 
 	BeforeEach(func() {
@@ -28,9 +28,9 @@ var _ = Describe("Reconciler addService", Ordered, func() {
 
 		instance = emqx.DeepCopy()
 		instance.Namespace = ns.Name
-		instance.Spec.CoreTemplate = appsv2beta1.EMQXCoreTemplate{
+		instance.Spec.CoreTemplate = crdv2.EMQXCoreTemplate{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: appsv2beta1.DefaultCoreLabels(emqx),
+				Labels: map[string]string{"test": "label"},
 			},
 		}
 	})

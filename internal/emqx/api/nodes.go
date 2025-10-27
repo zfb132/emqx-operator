@@ -5,14 +5,32 @@ import (
 	"fmt"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
 	req "github.com/emqx/emqx-operator/internal/requester"
 )
 
-func NodeInfo(req req.RequesterInterface, nodeName string) (*appsv2beta1.EMQXNode, error) {
+type EMQXNode struct {
+	// EMQX node name, example: emqx@127.0.0.1
+	Node string `json:"node,omitempty"`
+	// EMQX node status, example: Running
+	NodeStatus string `json:"node_status,omitempty"`
+	// Erlang/OTP version used by EMQX, example: 24.2/12.2
+	OTPRelease string `json:"otp_release,omitempty"`
+	// EMQX version
+	Version string `json:"version,omitempty"`
+	// EMQX cluster node role, enum: "core" "replicant"
+	Role string `json:"role,omitempty"`
+	// Number of MQTT sessions
+	Connections int64 `json:"connections,omitempty"`
+	// Number of connected MQTT clients
+	LiveConnections int64 `json:"live_connections,omitempty"`
+	// EMQX node uptime, milliseconds
+	Uptime int64 `json:"uptime,omitempty"`
+}
+
+func NodeInfo(req req.RequesterInterface, nodeName string) (*EMQXNode, error) {
 	body, err := get(req, fmt.Sprintf("api/v5/nodes/%s", nodeName))
 	if emperror.Is(err, ErrorNotFound) {
-		return &appsv2beta1.EMQXNode{
+		return &EMQXNode{
 			Node:       nodeName,
 			NodeStatus: "stopped",
 		}, nil
@@ -21,20 +39,20 @@ func NodeInfo(req req.RequesterInterface, nodeName string) (*appsv2beta1.EMQXNod
 		return nil, err
 	}
 
-	nodeInfo := &appsv2beta1.EMQXNode{}
+	nodeInfo := &EMQXNode{}
 	if err := json.Unmarshal(body, &nodeInfo); err != nil {
 		return nil, emperror.Wrap(err, "unexpected node info format")
 	}
 	return nodeInfo, nil
 }
 
-func Nodes(req req.RequesterInterface) ([]appsv2beta1.EMQXNode, error) {
+func Nodes(req req.RequesterInterface) ([]EMQXNode, error) {
 	body, err := get(req, "api/v5/nodes")
 	if err != nil {
 		return nil, err
 	}
 
-	nodeInfos := []appsv2beta1.EMQXNode{}
+	nodeInfos := []EMQXNode{}
 	if err := json.Unmarshal(body, &nodeInfos); err != nil {
 		return nil, emperror.Wrap(err, "unexpected node info format")
 	}

@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	emperror "emperror.dev/errors"
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	config "github.com/emqx/emqx-operator/internal/controller/config"
+	resources "github.com/emqx/emqx-operator/internal/controller/resources"
 	util "github.com/emqx/emqx-operator/internal/controller/util"
 	req "github.com/emqx/emqx-operator/internal/requester"
 	corev1 "k8s.io/api/core/v1"
@@ -47,7 +48,7 @@ func (f *managedByFilter) filter(pod *corev1.Pod) bool {
 }
 
 type emqxVersionFilter struct {
-	instance *appsv2beta1.EMQX
+	instance *crdv2.EMQX
 	prefix   string
 }
 
@@ -125,7 +126,7 @@ func getAPICredentials(bootstrapAPIKey *corev1.Secret) (string, string, error) {
 		users := strings.Split(string(data), "\n")
 		for _, user := range users {
 			index := strings.Index(user, ":")
-			if index > 0 && user[:index] == appsv2beta1.DefaultBootstrapAPIKey {
+			if index > 0 && user[:index] == resources.DefaultBootstrapAPIKey {
 				username := user[:index]
 				password := user[index+1:]
 				return username, password, nil

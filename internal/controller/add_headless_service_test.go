@@ -3,7 +3,7 @@ package controller
 import (
 	"testing"
 
-	appsv2beta1 "github.com/emqx/emqx-operator/api/v2beta1"
+	crdv2 "github.com/emqx/emqx-operator/api/v2"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -11,15 +11,15 @@ import (
 )
 
 func TestGenerateHeadlessSVC(t *testing.T) {
-	instance := &appsv2beta1.EMQX{
+	instance := &crdv2.EMQX{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "emqx",
 			Namespace: "emqx",
 		},
-		Spec: appsv2beta1.EMQXSpec{
-			CoreTemplate: appsv2beta1.EMQXCoreTemplate{
+		Spec: crdv2.EMQXSpec{
+			CoreTemplate: crdv2.EMQXCoreTemplate{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: appsv2beta1.DefaultCoreLabels(emqx),
+					Labels: map[string]string{"test": "label"},
 				},
 			},
 		},
@@ -32,7 +32,7 @@ func TestGenerateHeadlessSVC(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "emqx",
 			Name:      "emqx-headless",
-			Labels:    appsv2beta1.DefaultLabels(emqx),
+			Labels:    instance.DefaultLabels(),
 		},
 		Spec: corev1.ServiceSpec{
 			Type:                     corev1.ServiceTypeClusterIP,
@@ -55,7 +55,7 @@ func TestGenerateHeadlessSVC(t *testing.T) {
 					TargetPort: intstr.FromInt(5369),
 				},
 			},
-			Selector: appsv2beta1.DefaultCoreLabels(emqx),
+			Selector: instance.DefaultLabelsWith(crdv2.CoreLabels()),
 		},
 	}
 	assert.Equal(t, expect, generateHeadlessService(instance))

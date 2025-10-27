@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v2beta1
+package v2
 
 import (
 	corev1 "k8s.io/api/core/v1"
@@ -314,6 +314,10 @@ type ServiceTemplate struct {
 	// Spec defines the behavior of a service.
 	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	Spec corev1.ServiceSpec `json:"spec,omitempty"`
+}
+
+func (spec *EMQXSpec) HasReplicants() bool {
+	return spec.ReplicantTemplate != nil && spec.ReplicantTemplate.Spec.Replicas != nil && *spec.ReplicantTemplate.Spec.Replicas > 0
 }
 
 func (s *ServiceTemplate) IsEnabled() bool {
