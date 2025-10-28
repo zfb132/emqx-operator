@@ -589,4 +589,78 @@ var _ = Describe("EMQX Test", Label("emqx"), Ordered, func() {
 		})
 
 	})
+
+	Context("EMQX Core-Replicant Cluster / Runtime-enabled DS Replication", func() {
+		// Initial number of core and replicant replicas:
+		var coreReplicas int = 1
+		var replicantReplicas int = 2
+
+		It("deploy core-replicant EMQX cluster", func() {
+			By("create EMQX cluster")
+			emqxCR := PatchDocument(
+				FromYAMLFile(emqxCRBasic),
+				withImage(emqxImage),
+				withCores(coreReplicas),
+				withReplicants(replicantReplicas),
+				withConfig(),
+			)
+			Expect(KubectlStdin(emqxCR, "apply", "-f", "-")).To(Succeed())
+
+			By("wait for EMQX cluster to be ready")
+			Eventually(checkEMQXReady).Should(Succeed())
+			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
+			Eventually(checkReplicantStatus).WithArguments(replicantReplicas).Should(Succeed())
+		})
+
+		It("enable DS replication", func() {
+			By("change config + add label to trigger new deployment")
+			configDs := string(intoJsonString(configDS()))
+			coreReplicas = 2
+			changedAt := metav1.Now()
+			Expect(Kubectl("patch", "emqx", "emqx",
+				"--type", "json",
+				"--patch", `[
+					{"op": "replace", "path": "/spec/config/data", "value": `+configDs+`},
+					{"op": "add", "path": "/spec/coreTemplate/metadata/labels", "value": {"e2e/ds-replication": "true"}},
+					{"op": "replace", "path": "/spec/coreTemplate/spec/replicas", "value": 2}
+				]`,
+			)).To(Succeed())
+
+			By("wait for EMQX cluster to become ready again")
+			Eventually(checkEMQXReady).WithArguments(changedAt).Should(Succeed())
+			Eventually(checkEMQXStatus).WithArguments(coreReplicas).Should(Succeed())
+			Eventually(checkReplicantStatus).WithArguments(replicantReplicas).Should(Succeed())
+			Eventually(checkDSReplicationStatus).WithArguments(coreReplicas).Should(Succeed())
+			// EMQX 5.10.1: Initial cluster's sites are expected to hang around.
+			// Eventually(checkDSReplicationHealthy).Should(Succeed())
+
+			By("verify EMQX pods have relevant conditions")
+			var pods corev1.PodList
+			Expect(KubectlOut("get", "pods",
+				"--selector", crdv2.LabelManagedBy+"=emqx-operator",
+				"-o", "json",
+			)).To(UnmarshalInto(&pods), "Failed to list EMQX pods")
+			Expect(pods.Items).To(HaveLen(4))
+			for _, pod := range pods.Items {
+				if pod.Labels[crdv2.LabelDBRole] == "core" {
+					Expect(pod.Status.Conditions).To(ContainElement(And(
+						HaveField("Type", Equal(crdv2.DSReplicationSite)),
+						HaveField("Status", Equal(corev1.ConditionTrue)),
+					)))
+				}
+				if pod.Labels[crdv2.LabelDBRole] == "replicant" {
+					Expect(pod.Status.Conditions).To(ContainElement(And(
+						HaveField("Type", Equal(crdv2.DSReplicationSite)),
+						HaveField("Status", Equal(corev1.ConditionFalse)),
+					)))
+				}
+			}
+		})
+
+		It("delete EMQX cluster", func() {
+			Expect(Kubectl("delete", "emqx", "emqx")).To(Succeed())
+			Expect(Kubectl("get", "emqx", "emqx")).To(HaveOccurred(), "EMQX cluster still exists")
+		})
+
+	})
 })
