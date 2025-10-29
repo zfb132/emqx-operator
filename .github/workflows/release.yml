@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - '*'
   workflow_dispatch:
     inputs:
       branch:
@@ -45,7 +45,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}},value=${{ env.RELEASE_VERSION }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_VERSION }},
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_VERSION }}
 
       - uses: docker/build-push-action@v5
         with:
