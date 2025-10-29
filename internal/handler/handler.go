@@ -15,6 +15,7 @@ import (
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -73,6 +74,7 @@ func (handler *Handler) CreateOrUpdate(ctx context.Context, scheme *runtime.Sche
 	err := handler.Client.Get(ctx, client.ObjectKeyFromObject(obj), u)
 	if err != nil {
 		if k8sErrors.IsNotFound(err) {
+			logger.V(1).Info("creating managed resource", "resource", klog.KObj(obj))
 			return handler.Create(ctx, obj)
 		}
 		return emperror.Wrapf(err, "failed to get %s %s", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName())
@@ -142,7 +144,7 @@ func (handler *Handler) CreateOrUpdate(ctx context.Context, scheme *runtime.Sche
 		return emperror.Wrapf(err, "failed to calculate patch for %s %s", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName())
 	}
 	if !patchResult.IsEmpty() {
-		logger.Info("Will update EMQX sub-resource", "sub-resource", obj.GetObjectKind().GroupVersionKind().GroupKind().String(), "name", obj.GetName(), "patch", string(patchResult.Patch))
+		logger.V(1).Info("updating managed resource", "resource", klog.KObj(obj), "patch", string(patchResult.Patch))
 		return handler.Update(ctx, obj)
 	}
 	return nil

@@ -40,6 +40,7 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResul
 		if err := ctrl.SetControllerReference(instance, configMap, s.Scheme); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to set controller reference for configMap")}
 		}
+		r.log.V(1).Info("creating config resource", "configMap", klog.KObj(configMap))
 		if err := s.Client.Create(r.ctx, configMap); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to create configMap")}
 		}
@@ -53,6 +54,9 @@ func (s *syncConfig) reconcile(r *reconcileRound, instance *crdv2.EMQX) subResul
 	// Assuming the config is valid, otherwise master controller would bail out.
 	if configMap.Data[resources.BaseConfigFile] != confWithDefaults {
 		configMap = resource.ConfigMap(confWithDefaults)
+		if err := ctrl.SetControllerReference(instance, configMap, s.Scheme); err != nil {
+			return subResult{err: emperror.Wrap(err, "failed to set controller reference for configMap")}
+		}
 		r.log.V(1).Info("updating config resource", "configMap", klog.KObj(configMap))
 		if err := s.Client.Update(r.ctx, configMap); err != nil {
 			return subResult{err: emperror.Wrap(err, "failed to update configMap")}
